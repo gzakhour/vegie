@@ -3,12 +3,14 @@
 (datatype bool true false)
 
 (type not (bool) bool)
-(def not (true) false)
-(def not (false) true)
+(def not (?b) (case ?b
+  (true false)
+  (false true)))
 
 (type add (nat nat) nat)
-(def add (zero ?x) ?x)
-(def add ((succ ?x) ?y) (succ (add ?x ?y)))
+(def add (?a ?b) (case ?a
+  (zero ?b)
+  ((succ ?a) (succ (add ?a ?b)))))
 
 (theorem bool_eq_destruct_id ((?x bool))
   (case ?x
@@ -60,17 +62,21 @@
   ))
 
 
-(eval (mult (succ one) (mult (succ one) (succ one))))
-
+(type eight () nat)
+(def eight () (mult (succ one) (mult (succ one) (succ one))))
+(eval eight)
 
 
 (type odd (nat) bool)
 (type even (nat) bool)
 
-(def even (zero) true)
-(def even ((succ ?x)) (odd ?x))
+(def even (?n) (case ?n
+  (zero true)
+  ((succ ?x) (odd ?x))))
 
-(def odd (zero) false)
-(def odd ((succ ?x)) (even ?x))
+(def odd (?n) (case ?n
+  (zero false)
+  ((succ ?x) (even ?x))))
 
-(eval (even (succ (succ (succ (succ (succ zero)))))))
+(eval (even eight))
+(eval (even (succ eight)))
