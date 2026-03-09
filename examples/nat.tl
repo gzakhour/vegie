@@ -61,3 +61,16 @@
 
 
 (eval (mult (succ one) (mult (succ one) (succ one))))
+
+
+
+(type odd (nat) bool)
+(type even (nat) bool)
+
+(def even (zero) true)
+(def even ((succ ?x)) (odd ?x))
+
+(def odd (zero) false)
+(def odd ((succ ?x)) (even ?x))
+
+(eval (even (succ (succ (succ (succ (succ zero)))))))
