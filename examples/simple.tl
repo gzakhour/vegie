@@ -3,9 +3,9 @@
 (type one () nat)
 (def one () (succ zero))
 
-; (eval one)
+(eval one)
 
-(theorem test ((?n nat))
+(theorem one_is_succ_zero ()
   (succ zero)
   one)
 
@@ -38,4 +38,4 @@
   (case ?n
     (zero one)
     ((succ ?a) (sign ?n)))
-  (succ zero))
+  one)
