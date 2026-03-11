@@ -3,6 +3,13 @@
 (type one () nat)
 (def one () (succ zero))
 
+(type const (nat nat) nat)
+(def const (?x ?y) ?x)
+
+(theorem const_ignores_second ((?x nat) (?y nat))
+  (const ?x ?y)
+  ?x)
+
 (eval one)
 
 (theorem one_is_succ_zero ()
@@ -38,4 +45,4 @@
   (case ?n
     (zero one)
     ((succ ?a) (sign ?n)))
-  one)
+  (succ zero))
