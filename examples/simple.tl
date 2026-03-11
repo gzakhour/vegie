@@ -45,4 +45,4 @@
   (case ?n
     (zero one)
     ((succ ?a) (sign ?n)))
-  (succ zero))
+  one)
