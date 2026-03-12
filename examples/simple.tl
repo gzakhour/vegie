@@ -53,6 +53,9 @@
     (zero ?y)
     ((succ ?a) (succ (add ?a ?y)))))
 
+(theorem add_zero_left ((?x nat))
+  (add zero ?x)
+  ?x)
 
 (theorem add_zero_right ((?x nat))
   (add ?x zero)
@@ -95,8 +98,22 @@
   (add (succ ?x) (add ?y ?z))
   (add ?x (add ?y (succ ?z))))
 
-(theorem add_assoc ((?x nat) (?y nat) (?z nat))
+
+(theorem add_assoc_lemma0 ((?y nat) (?z nat))
+  (add zero (add ?y ?z))
+  (add (add zero ?y) ?z))
+
+(theorem add_assoc_lemma1 ((?x nat) (?y nat) (?z nat))
+  (add (succ ?x) (add ?y ?z))
+  (succ (add ?x (add ?y ?z)))
+)
+
+(theorem add_comm_assoc ((?x nat) (?y nat) (?z nat))
   (add ?x (add ?y ?z))
+  (add ?x (add ?y ?z)))
+
+(theorem add_assoc ((?x nat) (?y nat) (?z nat))
+  (add (add ?x ?y) ?z)
   (add ?x (add ?y ?z)))
 
 
@@ -129,3 +146,44 @@
 
 (theorem stupid_id_is_id ((?x nat))
   (stupid_id ?x) ?x)
+
+
+
+(type mult (nat nat) nat)
+(def mult (?x ?y)
+  (case ?x
+    (zero zero)
+    ((succ ?x) (add ?y (mult ?x ?y)))))
+
+
+(theorem mult_def_zero ((?x nat))
+  (mult zero ?x)
+  zero)
+
+; order matters
+(theorem mult_def_succ ((?x nat) (?y nat))
+  (add ?y (mult ?x ?y))
+  (mult (succ ?x) ?y)
+)
+
+(theorem mult_zero_right ((?x nat))
+  (mult ?x zero)
+  zero)
+
+(theorem mult_one_unit_left ((?x nat))
+  (mult one ?x)
+  ?x)
+
+(theorem mult_one_unit_right ((?x nat))
+  (mult one ?x)
+  ?x)
+
+(theorem mult_succ_def ((?x nat) (?y nat))
+  (mult (succ ?x) ?y)
+  (add ?y (mult ?x ?y))
+)
+
+; (theorem mult_comm ((?x nat) (?y nat))
+;   (mult ?x ?y)
+;   (mult ?y ?x)
+; )
