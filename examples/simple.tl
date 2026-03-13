@@ -61,15 +61,6 @@
   (add ?x zero)
   ?x)
 
-(theorem add_succ_swap_at_zero ()
-  (add zero (succ zero))
-  (add (succ zero) zero))
-
-(theorem add_succ_swap_zero ((?x nat))
-  (add ?x (succ zero))
-  (add (succ ?x) zero))
-
-; TODO the order here matterns!
 (theorem add_succ ((?x nat) (?y nat))
   (succ (add ?x ?y))
   (add (succ ?x) ?y)
@@ -149,6 +140,8 @@
 
 
 
+(datatype 2nat (pair nat nat))
+
 (type mult (nat nat) nat)
 (def mult (?x ?y)
   (case ?x
@@ -157,18 +150,16 @@
 
 
 (theorem mult_def_zero ((?x nat))
-  (mult zero ?x)
-  zero)
+  (mult zero ?x) zero)
+
+(theorem mult_zero_right ((?x nat))
+  (mult ?x zero) zero)
 
 ; order matters
 (theorem mult_def_succ ((?x nat) (?y nat))
   (add ?y (mult ?x ?y))
   (mult (succ ?x) ?y)
 )
-
-(theorem mult_zero_right ((?x nat))
-  (mult ?x zero)
-  zero)
 
 (theorem mult_one_unit_left ((?x nat))
   (mult one ?x)
@@ -183,7 +174,71 @@
   (add ?y (mult ?x ?y))
 )
 
-; (theorem mult_comm ((?x nat) (?y nat))
-;   (mult ?x ?y)
-;   (mult ?y ?x)
-; )
+(theorem mult_comm ((?x nat) (?y nat))
+  (mult ?x ?y)
+  (mult ?y ?x)
+)
+
+(theorem mult_add_dist ((?x nat) (?y nat) (?z nat))
+  (mult ?x (add ?y ?z))
+  (add (mult ?x ?y) (mult ?x ?z)))
+
+(theorem mult_assoc ((?x nat) (?y nat) (?z nat))
+  (mult ?x (mult ?y ?z))
+  (mult (mult ?x ?y) ?z))
+
+(type square (nat) nat)
+(def square (?x) (mult ?x ?x))
+(theorem square_def ((?x nat)) (square ?x) (mult ?x ?x))
+
+(type double (nat) nat)
+(def double (?x) (add ?x ?x))
+(theorem double_def ((?x nat)) (double ?x) (add ?x ?x))
+
+(type cube (nat) nat)
+(def cube (?x) (mult ?x (mult ?x ?x)))
+(theorem cube_def ((?x nat)) (cube ?x) (mult ?x (mult ?x ?x)))
+
+(theorem binomial ((?x nat) (?y nat))
+  (square (add ?x ?y))
+  (add (square ?x) (add (double (mult ?x ?y)) (square ?y))))
+
+(type sum_up_to (nat) nat)
+(def sum_up_to (?x)
+  (case ?x
+    (zero zero)
+    ((succ ?x) (add (succ ?x) (sum_up_to ?x)))))
+
+(theorem sum_up_to_def0 ()
+  (sum_up_to zero) zero)
+
+(theorem sum_up_to_def1 ((?x nat))
+  (add (succ ?x) (sum_up_to ?x))
+  (sum_up_to (succ ?x)))
+
+(theorem gauss_formula ((?x nat))
+  (double (sum_up_to ?x))
+  (mult ?x (succ ?x)))
+
+(type sum_cubes_up_to (nat) nat)
+(def sum_cubes_up_to (?x)
+  (case ?x
+    (zero zero)
+    ((succ ?x) (add (cube (succ ?x)) (sum_cubes_up_to ?x)))))
+
+(theorem sum_cubes_up_to0 ()
+  (sum_cubes_up_to zero)
+  zero)
+
+(eval (sum_cubes_up_to (succ (succ zero))))
+
+(theorem sum_cubes_up_to1 ((?x nat))
+  (add (cube (succ ?x)) (sum_cubes_up_to ?x))
+  (sum_cubes_up_to (succ ?x))
+)
+
+(theorem nicomachus ((?x nat))
+  (double (double (sum_cubes_up_to ?x)))
+  (square (sum_up_to ?x)))
+
+
