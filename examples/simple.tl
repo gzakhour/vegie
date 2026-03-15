@@ -1,4 +1,29 @@
 (datatype nat zero (succ nat))
+(datatype bool true false)
+
+(type not (bool) bool)
+(def not (?b) (case ?b (true false) (false true)))
+
+(theorem not_true () (not true) false)
+(theorem not_false () (not false) true)
+(theorem not_not ((?b bool)) (not (not ?b)) ?b)
+
+(type even (nat) bool)
+(type odd (nat) bool)
+
+(def even (?x) (case ?x (zero true) ((succ ?y) (not (odd ?y)))))
+(def odd (?x) (case ?x (zero false) ((succ ?y) (not (even ?y)))))
+
+(theorem even_zero () (even zero) true)
+(theorem even_succ ((?x nat)) (even (succ ?x)) (not (odd ?x)))
+
+(theorem odd_zero () (odd zero) false)
+(theorem odd_succ ((?x nat)) (odd (succ ?x)) (not (even ?x)))
+
+(theorem even_plus_2 ((?x nat))
+  (even (succ (succ ?x)))
+  (even ?x))
+
 
 (type one () nat)
 (def one () (succ zero))
