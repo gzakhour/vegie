@@ -1,0 +1,811 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::lang::ast::{Id, VarId, IdentId, TheoremId};
+use crate::lang::ast::{Expr, Pattern, Proof};
+use crate::lang::ctx::{Ctx, TypeInfo};
+use crate::util::{cartesian};
+
+pub type Version = usize;
+
+pub const ROOT_VERSION: Version = 0;
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct ENodeId(pub usize);
+
+impl Id for ENodeId {
+  fn as_usize(&self) -> usize { self.0 }
+  fn from(n: usize) -> Self { Self(n) }
+}
+
+
+
+pub struct HashCons<T: Ord + Clone, I: Id> {
+  memo: BTreeMap<T, I>,
+  values: Vec<T>,
+}
+
+impl<T: Ord + Clone, I: Id + Clone + Copy> HashCons<T,I> {
+  fn new() -> Self {//{{{
+    HashCons { memo: BTreeMap::new(), values: vec![] }
+  }//}}}
+
+  fn add(&mut self, t: T) -> I {//{{{
+    if let Some(id) = self.memo.get(&t) {
+      *id
+    } else {
+      let id = self.memo.len();
+      self.memo.insert(t.clone(), Id::from(id));
+      self.values.push(t.clone());
+      Id::from(id)
+    }
+  }//}}}
+
+  pub fn get(&self, id: &I) -> &T {//{{{
+    &self.values[Id::as_usize(id)]
+  }//}}}
+
+  fn contains(&self, t: &T) -> bool {//{{{
+    self.memo.contains_key(t)
+  }//}}}
+}
+
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug)]
+pub enum ENode {
+  Var(VarId),
+  App(IdentId, Vec<ENodeId>),
+  Case(ENodeId, Vec<(Pattern, Expr)>),
+}
+
+pub struct VTree {
+  pub parent: Vec<Version>,
+  pub children: Vec<Vec<Version>>,
+}
+
+impl VTree {
+  fn new() -> Self {//{{{
+    Self { parent: vec![ ROOT_VERSION ], children: vec![ vec![] ] }
+  }//}}}
+
+  fn fork(&mut self, v: Version) -> Version {//{{{
+    let new = self.parent.len();
+    self.parent.push(v);
+    self.children.push(vec![]);
+    self.children[v].push(new);
+    return new;
+  }//}}}
+
+  fn is_ancestor(&self, v0: Version, mut v1: Version) -> bool {//{{{
+    loop {
+      if v1 == v0 { return true; }
+      if v1 == ROOT_VERSION { return false; }
+      v1 = self.parent[v1];
+    }
+  }//}}}
+
+  fn all_between(&self, v0: Version, mut v1: Version) -> Vec<Version> {//{{{
+    let mut result = vec![];
+    loop {
+      result.push(v1);
+      if v1 == v0 { result.reverse(); return result; }
+      if v1 == ROOT_VERSION { panic!(); }
+      v1 = self.parent[v1];
+    }
+  }//}}}
+
+  fn distance(&self, v0: Version, v1: Version) -> usize {//{{{
+    self.all_between(v0, v1).len() - 1
+  }//}}}
+
+}
+
+
+pub struct VUF {
+  parent: Vec<BTreeMap<ENodeId, ENodeId>>,
+  pub tree: VTree,
+}
+
+impl VUF {
+  fn new() -> Self {//{{{
+    Self { parent: vec![ BTreeMap::new() ], tree: VTree::new() }
+  }//}}}
+
+  fn fork(&mut self, v: Version) -> Version {//{{{
+    let v = self.tree.fork(v);
+    self.parent.push(BTreeMap::new());
+    return v;
+  }//}}}
+
+  fn add(&mut self, e: ENodeId) {//{{{
+    self.parent[ROOT_VERSION].entry(e).or_insert(e);
+  }//}}}
+
+  fn closest_valid_parent(&self, e: ENodeId, v: Version) -> ENodeId {//{{{
+    if v == ROOT_VERSION {
+      *self.parent[v].get(&e).unwrap()
+    } else {
+      self.parent[v].get(&e).copied().unwrap_or_else(|| self.closest_valid_parent(e, self.tree.parent[v]))
+    }
+  }//}}}
+
+  fn find(&mut self, e: ENodeId, v: Version) -> ENodeId {//{{{
+    let parent = self.closest_valid_parent(e, v);
+    let root = if parent != e { self.find(parent, v) } else { parent };
+    self.parent[v].insert(e, root);
+    return root
+  }//}}}
+
+  fn query(&self, e: ENodeId, v: Version) -> ENodeId {//{{{
+    let parent = self.closest_valid_parent(e, v);
+    if parent != e { self.query(parent, v) } else { parent }
+  }//}}}
+
+  fn union(&mut self, e1: ENodeId, e2: ENodeId, v: Version) -> ENodeId {//{{{
+    let e1 = self.find(e1, v);
+    let e2 = self.find(e2, v);
+    for i in 0 .. self.tree.children[v].len() {
+      self.union(e1, e2, self.tree.children[v][i]);
+    }
+    self.parent[v].insert(e1, e2);
+    return e2;
+  }//}}}
+
+}
+
+
+
+#[derive(Ord,PartialOrd,Eq,PartialEq,Clone,Debug)]
+pub enum ProofEdge {
+  Definition(IdentId, bool),
+  Rewrite(TheoremId, bool, BTreeMap<u8, ENodeId>),
+  Congr,
+  Injective(u8, ENodeId, ENodeId),
+  Absurd(ENodeId, ENodeId),
+  Hyp(IdentId, bool),
+  CaseReduct(IdentId, usize, bool),
+}
+
+impl ProofEdge {
+  pub fn inverse(&self) -> ProofEdge {//{{{
+    use ProofEdge::*;
+    match self {
+      Definition(ident, b) => Definition(*ident, !b),
+      Rewrite(t, b, es) => Rewrite(*t, !b, es.clone()),
+      Congr => Congr,
+      Injective(n, a, b) => Injective(*n, *b, *a),
+      Absurd(a, b) => Absurd(*b, *a),
+      Hyp(h, c) => Hyp(*h, !c),
+      CaseReduct(id, n, b) => CaseReduct(*id, *n, !b),
+    }
+  }//}}}
+}
+
+
+pub struct VEGraph {
+  pub hashcons: HashCons<ENode, ENodeId>,
+  pub vuf: VUF,
+  parents: Vec<Vec<ENodeId>>,
+
+  enodes_per_versions: Vec<BTreeSet<ENodeId>>,
+  pub enodes_per_eclass: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
+
+  pub var_enodes: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
+  pub app_enodes: Vec<BTreeMap<ENodeId, BTreeMap<IdentId, Vec<ENodeId>>>>,
+  pub case_enodes: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
+
+  proof_graph: BTreeMap<ENodeId, Vec<(Version, ProofEdge, ENodeId)>>,
+  version_hyp: Vec<IdentId>,
+  hyp_eq: BTreeMap<IdentId, (ENodeId, ENodeId)>,
+}
+
+impl VEGraph {
+  pub fn new() -> Self {//{{{
+    Self {
+      vuf: VUF::new(),
+      hashcons: HashCons::new(),
+      parents: vec![],
+
+      enodes_per_versions: vec![ BTreeSet::new() ],
+
+      var_enodes: vec![ BTreeMap::new() ],
+      app_enodes: vec![ BTreeMap::new() ],
+      case_enodes: vec![ BTreeMap::new() ],
+
+      enodes_per_eclass: vec![ BTreeMap::new() ],
+
+      proof_graph: BTreeMap::new(),
+      version_hyp: vec![ IdentId(0) ], // will never be called at ROOT_VERSION
+      hyp_eq: BTreeMap::new(),
+    }
+  }//}}}
+
+  fn canonicalize(&mut self, e: ENode, v: Version) -> ENode {//{{{
+    match e {
+      ENode::Var(_) => e.clone(),
+      ENode::App(f, args) => ENode::App(f, args.into_iter().map(|a| self.find(a, v)).collect()),
+      ENode::Case(scrutinee, arms) => {
+        let scrutinee = self.find(scrutinee, v);
+        ENode::Case(scrutinee, arms.clone())
+      }
+    }
+  }//}}}
+
+  fn add_enode(&mut self, enode: ENode, v: Version) -> ENodeId {//{{{
+    for vc in self.vuf.tree.children[v].clone() {
+      self.add_enode(enode.clone(), vc);
+    }
+    let id = if self.hashcons.contains(&enode) {
+      self.hashcons.add(enode.clone())
+    } else {
+      let id = self.hashcons.add(enode.clone());
+      self.vuf.add(id);
+      self.parents.push(vec![]);
+      id
+    };
+    if !self.enodes_per_versions[v].contains(&id) {
+      self.enodes_per_eclass[v].insert(id, vec![]);
+      self.var_enodes[v].entry(id).or_insert(vec![]);
+      self.app_enodes[v].entry(id).or_insert(BTreeMap::new());
+      self.case_enodes[v].entry(id).or_insert(vec![]);
+      match &enode {
+        ENode::Var(_) => {
+          self.var_enodes[v].get_mut(&id).unwrap().push(id);
+        }
+        ENode::App(f, args) => {
+          for a in args { self.parents[Id::as_usize(a)].push(id); }
+          self.app_enodes[v].get_mut(&id).unwrap().entry(*f).or_insert(vec![]).push(id);
+        }
+        ENode::Case(scrutinee, _) => {
+          self.parents[Id::as_usize(scrutinee)].push(id);
+          self.case_enodes[v].get_mut(&id).unwrap().push(id);
+        }
+      }
+    }
+    self.enodes_per_versions[v].insert(id);
+    let class = self.find(id, v);
+    if let Some(enodes) = self.enodes_per_eclass[v].get_mut(&class) {
+      enodes.push(id);
+    } else {
+      self.enodes_per_eclass[v].insert(class, vec![ id ]);
+    }
+    id
+  }//}}}
+
+  pub fn add_expr(&mut self, e: &Expr, v: Version) -> ENodeId {//{{{
+    let enode = match e {
+      Expr::Var(v) => ENode::Var(*v),
+      Expr::Cons(k, args) => ENode::App(*k, args.iter().map(|a| self.add_expr(a, v)).collect()),
+      Expr::App(f, args) => ENode::App(*f, args.iter().map(|a| self.add_expr(a, v)).collect()),
+      Expr::Case(scrutinee, arms) => {
+        let scrut_id = self.add_expr(scrutinee, v);
+        ENode::Case(scrut_id, arms.clone())
+      },
+    };
+    let canon = self.canonicalize(enode.clone(), v);
+    let canon_id = self.add_enode(canon, v);
+    let id = self.add_enode(enode, v);
+    self.union(id, canon_id, v, ProofEdge::Congr);
+    return id;
+  }//}}}
+
+  pub fn find(&mut self, e: ENodeId, v: Version) -> ENodeId {//{{{
+    let id = self.vuf.find(e, v);
+    assert!(self.enodes_per_versions[v].contains(&id));
+    return id;
+  }//}}}
+
+  pub fn union(&mut self, e1: ENodeId, e2: ENodeId, v: Version, proof: ProofEdge) -> ENodeId {//{{{
+    if e1 != e2 {
+      self.proof_graph.entry(e1).or_insert(vec![]).push((v, proof.clone(), e2));
+      self.proof_graph.entry(e2).or_insert(vec![]).push((v, proof.inverse(), e1));
+    }
+
+    let e1p = self.find(e1, v);
+    let e2p = self.find(e2, v);
+
+    let (parent, child) = if e1.as_usize() <= e2.as_usize() { (e1p, e2p) } else { (e2p, e1p) };
+    if parent == child { return e1; }
+
+    if let Some(other) = self.enodes_per_eclass[v].remove(&child) {
+      self.enodes_per_eclass[v].get_mut(&parent).unwrap().extend(other);
+    }
+    if let Some(other) = self.var_enodes[v].remove(&child) {
+      self.var_enodes[v].get_mut(&parent).unwrap().extend(other);
+    }
+    if let Some(other) = self.app_enodes[v].remove(&child) {
+      for (f, enodes) in other {
+        self.app_enodes[v].get_mut(&parent).unwrap().entry(f).or_insert(vec![]).extend(enodes);
+      }
+    }
+    if let Some(other) = self.case_enodes[v].remove(&child) {
+      self.case_enodes[v].get_mut(&parent).unwrap().extend(other);
+    }
+
+    for vc in 0 .. self.vuf.tree.children[v].len() {
+      self.union(e1, e2, self.vuf.tree.children[v][vc], proof.clone());
+    }
+
+    self.vuf.union(child, parent, v);
+
+
+    for parent in 0 .. self.parents[Id::as_usize(&child)].len() {
+      let parent = self.parents[Id::as_usize(&child)][parent];
+      if !self.enodes_per_versions[v].contains(&parent) { continue; }
+      let parent_enode = self.hashcons.get(&parent).clone();
+      let canonical_parent = self.canonicalize(parent_enode, v);
+      let canonical_parent = self.add_enode(canonical_parent, v);
+      self.union(canonical_parent, parent, v, ProofEdge::Congr);
+    }
+
+    return parent
+  }//}}}
+
+  pub fn fork(&mut self, v: Version, hyp: IdentId) -> Version {//{{{
+    let vc = self.vuf.fork(v);
+    self.enodes_per_versions.push(self.enodes_per_versions[v].clone());
+    self.var_enodes.push(self.var_enodes[v].clone());
+    self.app_enodes.push(self.app_enodes[v].clone());
+    self.case_enodes.push(self.case_enodes[v].clone());
+    self.enodes_per_eclass.push(self.enodes_per_eclass[v].clone());
+    self.version_hyp.push(hyp);
+    return vc;
+  }//}}}
+
+  pub fn query(&self, id: ENodeId, v: Version) -> ENodeId {//{{{
+    self.vuf.query(id, v)
+  }//}}}
+
+  pub fn dump(&self, ctx: &Ctx) -> String {//{{{
+    let mut ans = String::new();
+    for v in 0 .. self.vuf.tree.parent.len() {
+      ans.push_str(&format!("Version {v}, parent: {}\n", self.vuf.tree.parent[v]));
+      for (eclass, enodes) in &self.enodes_per_eclass[v] {
+        ans.push_str(&format!("  E-Class {}:\n", Id::as_usize(eclass)));
+        for enode in enodes.iter().collect::<BTreeSet<_>>() {
+          if let ENode::Case(s, _) = self.hashcons.get(enode) {
+            if self.query(*s, v) != *s { continue }
+          }
+          ans.push_str(&format!("    {enode:?}: {}\n", self.dump_enode(ctx, *enode)))
+        }
+      }
+      ans.push('\n');
+    }
+    ans
+  }//}}}
+
+  pub fn dump_enode(&self, ctx: &Ctx, enode: ENodeId) -> String {//{{{
+    let enode = self.hashcons.get(&enode);
+    match enode {
+      ENode::Var(x) => format!("{}", ctx.vars.as_str(x)),
+      ENode::App(f, args) => {
+        let mut ans = format!("({}", ctx.idents.as_str(f));
+        for a in args {
+          ans.push(' ');
+          ans.push_str(&self.dump_enode(ctx, *a));
+        }
+        ans.push(')');
+        ans
+      }
+      ENode::Case(scrutinee, arms) => {
+        let mut ans = format!("(case {}", self.dump_enode(ctx, *scrutinee));
+        for (pat, expr) in arms {
+          ans.push_str(" (");
+          ans.push_str(&pat.to_string(ctx));
+          ans.push(' ');
+          ans.push_str(&expr.to_string(ctx));
+          ans.push(')');
+        }
+        ans.push(')');
+        ans
+      }
+    }
+  }//}}}
+
+  pub fn set_hyp_eq(&mut self, hyp: IdentId, e1: ENodeId, e2: ENodeId) {//{{{
+    self.hyp_eq.insert(hyp, (e1, e2));
+  }//}}}
+}
+
+
+
+#[test]
+fn vuf() {//{{{
+  let mut vuf = VUF::new();
+
+  vuf.add(ENodeId(1));
+  vuf.add(ENodeId(2));
+  vuf.add(ENodeId(3));
+  vuf.add(ENodeId(4));
+
+  vuf.union(ENodeId(1), ENodeId(2), ROOT_VERSION);
+  assert_eq!(vuf.find(ENodeId(1), ROOT_VERSION), vuf.find(ENodeId(2), ROOT_VERSION));
+  assert!(vuf.find(ENodeId(1), ROOT_VERSION) != vuf.find(ENodeId(3), ROOT_VERSION));
+
+  let v1 = vuf.fork(ROOT_VERSION);
+  assert_eq!(vuf.find(ENodeId(1), ROOT_VERSION), vuf.find(ENodeId(2), v1));
+  assert!(vuf.find(ENodeId(1), ROOT_VERSION) != vuf.find(ENodeId(3), v1));
+
+  vuf.union(ENodeId(1), ENodeId(3), v1);
+  assert_eq!(vuf.find(ENodeId(2), v1), vuf.find(ENodeId(3), v1));
+  assert!(vuf.find(ENodeId(2), ROOT_VERSION) != vuf.find(ENodeId(3), ROOT_VERSION));
+
+  let v2 = vuf.fork(ROOT_VERSION);
+
+  vuf.union(ENodeId(3), ENodeId(4), ROOT_VERSION);
+  assert_eq!(vuf.find(ENodeId(1), v1), vuf.find(ENodeId(4), v1));
+  assert_eq!(vuf.find(ENodeId(3), ROOT_VERSION), vuf.find(ENodeId(4), ROOT_VERSION));
+  assert!(vuf.find(ENodeId(2), ROOT_VERSION) != vuf.find(ENodeId(4), ROOT_VERSION));
+
+  vuf.add(ENodeId(5));
+  vuf.add(ENodeId(6));
+  vuf.union(ENodeId(5), ENodeId(6), v2);
+  assert_eq!(vuf.find(ENodeId(5), v2), vuf.find(ENodeId(6), v2));
+  assert!(vuf.find(ENodeId(5), v1) != vuf.find(ENodeId(6), v1));
+  assert!(vuf.find(ENodeId(5), ROOT_VERSION) != vuf.find(ENodeId(6), ROOT_VERSION));
+}//}}}
+
+
+#[test]
+fn vegraph() {//{{{
+  let mut veg = VEGraph::new();
+
+  let id0 = veg.add_expr(&Expr::Var(Id::from(0)), ROOT_VERSION);
+  let id1 = veg.add_expr(&Expr::Var(Id::from(1)), ROOT_VERSION);
+  let id2 = veg.add_expr(&Expr::Var(Id::from(2)), ROOT_VERSION);
+
+  assert!(veg.find(id0, ROOT_VERSION) != veg.find(id1, ROOT_VERSION));
+  veg.union(id0, id1, ROOT_VERSION);
+  assert_eq!(veg.find(id0, ROOT_VERSION), veg.find(id1, ROOT_VERSION));
+  assert!(veg.find(id2, ROOT_VERSION) != veg.find(id1, ROOT_VERSION));
+
+  let v1 = veg.fork(ROOT_VERSION);
+  assert_eq!(veg.find(id0, v1), veg.find(id1, v1));
+  assert!(veg.find(id2, v1) != veg.find(id1, v1));
+
+  let id3 = veg.add_expr(&Expr::Cons(Id::from(0), vec![ Expr::Var(Id::from(0)) ]), v1);
+  let id4 = veg.add_expr(&Expr::Cons(Id::from(0), vec![ Expr::Var(Id::from(1)) ]), v1);
+
+  assert_eq!(veg.find(id3, v1), veg.find(id4, v1));
+  assert_eq!(veg.find(id3, ROOT_VERSION), veg.find(id4, ROOT_VERSION));
+
+  let id5 = veg.union(id2, id1, v1);
+  assert_eq!(veg.find(id2, v1), veg.find(id0, v1));
+  assert!(veg.find(id2, ROOT_VERSION) != veg.find(id0, ROOT_VERSION));
+
+  let v2 = veg.fork(ROOT_VERSION);
+
+  let id0 = veg.add_expr(&Expr::App(Id::from(0), vec![ Expr::Var(Id::from(10)) ]), v2);
+  let id1 = veg.add_expr(&Expr::App(Id::from(0), vec![ Expr::Var(Id::from(11)) ]), v2);
+  let id2 = veg.add_expr(&Expr::Var(Id::from(10)), v2);
+  let id3 = veg.add_expr(&Expr::Var(Id::from(11)), v2);
+
+  veg.union(id2, id3, v2);
+  assert_eq!(veg.find(id0, v2), veg.find(id1, v2));
+  assert!(veg.find(id0, ROOT_VERSION) != veg.find(id1, ROOT_VERSION));
+
+  let v3 = veg.fork(v2);
+  veg.union(id0, id2, v3);
+  assert_eq!(veg.find(id1, v3), veg.find(id3, v3));
+  assert!(veg.find(id1, v1) != veg.find(id3, v1));
+}//}}}
+
+
+
+#[derive(Clone, Debug)]
+pub enum SearchPattern {
+  MetaVar(u8),
+  App(IdentId, Vec<SearchPattern>),
+}
+
+impl SearchPattern {
+
+  pub fn from_expr_with_args(e: &Expr, args: &Vec<VarId>) -> Option<Self> {//{{{
+    Some(match e {
+      Expr::Cons(id, eargs) => {
+        let mut new_args = vec![];
+        for a in eargs { new_args.push(Self::from_expr_with_args(a, args)?); }
+        SearchPattern::App(*id, new_args)
+      },
+      Expr::App(id, eargs) => {
+        let mut new_args = vec![];
+        for a in eargs { new_args.push(Self::from_expr_with_args(a, args)?); }
+        SearchPattern::App(*id, new_args)
+      },
+      Expr::Var(id) => {
+        SearchPattern::MetaVar(args.iter().position(|p| p == id)? as u8)
+      },
+      Expr::Case(_, _) => None?,
+    })
+  }//}}}
+
+
+  pub fn get_fvs(&self) -> BTreeSet<u8> {//{{{
+    fn aux(p: &SearchPattern, result: &mut BTreeSet<u8>) {
+      match p {
+        SearchPattern::MetaVar(n) => { result.insert(*n); }
+        SearchPattern::App(_, args) => { for a in args { aux(a, result) } }
+      }
+    }
+    let mut result = BTreeSet::new();
+    aux(self, &mut result);
+    result
+  }//}}}
+
+}
+
+
+
+type Bindings = BTreeMap<u8, ENodeId>;
+
+fn consistent(b1: &Bindings, b2: &Bindings) -> Option<Bindings> {//{{{
+  let (b1, b2) = if b1.len() <= b2.len() { (b1, b2) } else { (b2, b1) };
+  let mut result = BTreeMap::new();
+  for (k, v1) in b1 {
+    if let Some(v2) = b2.get(k) { if v1 != v2 { return None; } }
+    result.insert(*k, *v1);
+  }
+  for (k, v) in b2 { result.insert(*k, *v); }
+  Some(result)
+}//}}}
+
+pub enum StructuralOrd {
+  UNKNOWN, EQ, LE
+}
+
+impl VEGraph {
+
+  pub fn search(&self, eclass: ENodeId, pat: &SearchPattern, v: Version, limit: usize, millis: u64) -> Vec<Bindings> {//{{{
+    use SearchPattern::*;
+    let eclass = self.query(eclass, v);
+
+    match pat {
+      MetaVar(var) => {
+        let mut result = vec![];
+        for i in 0 .. self.enodes_per_eclass[v][&eclass].len() {
+          let enode = self.enodes_per_eclass[v][&eclass][i];
+          if enode == self.query(enode, v) {
+            result.push(Bindings::from([ (*var, enode) ]));
+          }
+        }
+        return result
+      },
+
+      App(ident, args) => {
+        let mut result = vec![];
+
+        use std::time::{Instant, Duration};
+        let start = Instant::now();
+
+        'enode_search: for i in 0 .. self.app_enodes[v].get(&eclass).unwrap_or(&BTreeMap::new()).get(ident).map(|l| l.len()).unwrap_or(0) {
+          if start.elapsed() >= Duration::from_millis(millis) { break; }
+          let enode = self.app_enodes[v][&eclass][ident][i];
+          let ENode::App(_, enode_args) = self.hashcons.get(&enode).clone() else { continue };
+
+          if args.len() != enode_args.len() { continue; }
+          // only e-match on canonicals?
+          if enode_args.iter().any(|a| self.query(*a,v) != *a) { continue; }
+
+          let mut bindings = vec![ Bindings::new() ];
+
+          for (eclass, pat) in enode_args.iter().zip(args) {
+            if start.elapsed() >= Duration::from_millis(millis) { break 'enode_search; }
+            if bindings.len() == 0 { continue 'enode_search; }
+            let subbindings = self.search(*eclass, pat, v, limit, millis);
+            if subbindings.len() == 0 { continue 'enode_search; }
+            let mut consistent_bindings = vec![];
+            for (i, j) in cartesian(bindings.len(), subbindings.len()) {
+              if start.elapsed() >= Duration::from_millis(millis) { break 'enode_search; }
+              if let Some(cons) = consistent(&bindings[bindings.len()-i-1], &subbindings[subbindings.len()-j-1]) {
+                consistent_bindings.push(cons);
+                if consistent_bindings.len() > limit { break; }
+              }
+            }
+            bindings = consistent_bindings;
+          }
+
+          result.extend(bindings);
+        }
+
+        return result;
+      }
+
+    }
+  }//}}}
+
+  pub fn all_eclasses(&self, v: Version) -> Vec<ENodeId> {//{{{
+    self.enodes_per_eclass[v].keys().copied().collect()
+  }//}}}
+
+  pub fn search_all(&self, pat: &SearchPattern, v: Version, limit: usize) -> impl Iterator<Item=(ENodeId, Bindings)> {//{{{
+    let millis = 1000 / self.all_eclasses(v).len();
+    self.all_eclasses(v).into_iter().flat_map(move |e| self.search(e, pat, v, limit, millis as u64).into_iter().map(move |b| (e,b)))
+  }//}}}
+
+  pub fn add_pattern(&mut self, pat: &SearchPattern, bindings: &Bindings, v: Version) -> ENodeId {//{{{
+    match pat {
+      SearchPattern::MetaVar(i) => bindings[i],
+      SearchPattern::App(f, args) => {
+        let enode = ENode::App(*f, args.iter().map(|a| self.add_pattern(a, bindings, v)).collect::<_>());
+        self.add_enode(enode, v)
+      }
+    }
+  }//}}}
+
+  pub fn structurally_less(&self, type_info: &BTreeMap<IdentId, TypeInfo>, big: ENodeId, small: ENodeId, v: Version) -> StructuralOrd {//{{{
+    use StructuralOrd::*;
+    let big = self.query(big, v);
+    let small = self.query(small, v);
+
+    if big == small { return EQ }
+
+    // TODO BUG! enodes_per_eclass contains an enode that app_enodes does not!
+    for enode in &self.enodes_per_eclass[v][&self.query(big, v)] {
+      let ENode::App(func, args) = self.hashcons.get(enode) else { continue };
+      if type_info.get(func).map(|tinfo| !tinfo.constructor).unwrap_or(true) { continue }
+
+      for arg in args {
+        if let EQ | LE = self.structurally_less(type_info, *arg, small, v) {
+          return LE;
+        }
+      }
+
+      break;
+    }
+
+    return UNKNOWN;
+  }//}}}
+
+  pub fn extract(&self, enode: ENodeId) -> Expr {//{{{
+    match self.hashcons.get(&enode) {
+      ENode::Var(v) => Expr::Var(*v),
+      ENode::Case(e, arms) => Expr::Case(Box::new(self.extract(*e)), arms.clone()),
+      ENode::App(f, args) => Expr::App(*f, args.iter().map(|a| self.extract(*a)).collect()),
+    }
+  }//}}}
+
+  pub fn equal(&self, e0: ENodeId, e1: ENodeId, v: Version) -> bool {//{{{
+    self.query(e0, v) == self.query(e1, v) || self.vuf.tree.children[v].iter().all(|v| self.equal(e0, e1, *v))
+  }//}}}
+
+  pub fn explain(&mut self, src: ENodeId, dest: ENodeId, v: Version) -> Proof {{{
+    if src == dest { return Proof::Refl; }
+
+    use std::collections::{BinaryHeap};
+
+    let mut found = false;
+    let mut prev = BTreeMap::new();
+
+    {
+      use std::cmp::{Ordering};
+      #[derive(Eq,PartialEq)]
+      struct Node { node: ENodeId, cost: usize }
+      impl Ord for Node {
+        fn cmp(&self, other: &Self) -> Ordering {
+          other.cost.cmp(&self.cost)
+        }
+      }
+      impl PartialOrd for Node {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+          Some(self.cmp(&other))
+        }
+      }
+
+      let mut dist = BTreeMap::new();
+      let mut queue = BinaryHeap::new();
+      let mut visited = BTreeSet::new();
+
+      queue.push(Node { node: src.clone(), cost: 0 });
+      dist.insert(src.clone(), 0);
+
+      while let Some(Node { node, cost }) = queue.pop() {
+        if node == dest { found = true; break; }
+        // if visited.contains(&node) { continue; }
+        visited.insert(node);
+
+        'edge_search: for (ve, step, next) in &self.proof_graph[&node] {
+          // if visited.contains(next) { continue; }
+          let cost: usize = cost +
+            if self.vuf.tree.is_ancestor(*ve, v) { 1 }
+            else if self.vuf.tree.is_ancestor(v, *ve) {
+              let dist = self.vuf.tree.distance(v, *ve);
+              for vc in self.vuf.tree.all_between(v, *ve) {
+                if !self.equal(node, *next, vc) { continue 'edge_search; }
+              }
+              7 << dist
+            } else { continue };
+          if cost < *dist.get(next).unwrap_or(&usize::MAX) {
+            queue.push(Node { node: *next, cost });
+            prev.insert(next.clone(), (*ve, step.clone(), node));
+            dist.insert(*next, cost);
+          }
+        }
+      }
+    }
+
+    if !found { return Proof::Refl } // TODO BUG!
+
+    let mut path: Vec<Proof> = vec![];
+    let mut node = dest.clone();
+    while node != src {
+      let (ve, step, prev) = prev[&node].clone();
+      path.push(if self.vuf.tree.is_ancestor(ve, v) {
+        match step.clone() {
+          ProofEdge::Definition(ident, dir) =>
+            Proof::Definition(ident, dir),
+          ProofEdge::Rewrite(id, dir, bindings) =>
+            Proof::Rewrite(id, dir, bindings.into_iter().map(|(k,e)| (k, self.extract(e))).collect()),
+          ProofEdge::Injective(i, a, b) =>
+            Proof::Injective(i, self.extract(a), self.extract(b), Box::new(self.explain(a, b, v))),
+          ProofEdge::Absurd(a, b) =>
+            Proof::Absurd(self.extract(a), self.extract(b), Box::new(self.explain(a, b, v))),
+          ProofEdge::CaseReduct(id, i, dir) => Proof::CaseReduct(id, i, dir),
+          ProofEdge::Hyp(id, dir) => Proof::Hyp(id, dir),
+          ProofEdge::Congr => {
+            match self.hashcons.get(&prev).clone() {
+              ENode::App(f1, args1) => {
+                let ENode::App(f2, args2) = self.hashcons.get(&node).clone() else { panic!() };
+                assert_eq!(f1, f2);
+                assert_eq!(args1.len(), args2.len());
+                Proof::Congr(f1, args1.into_iter().zip(args2).map(|(a1,a2)| self.explain(a1, a2, v)).collect())
+              },
+              ENode::Case(scrutinee1, _) => {
+                let ENode::Case(scrutinee2, _) = self.hashcons.get(&node).clone() else { panic!() };
+                Proof::CongrScrutinee(Box::new(self.explain(scrutinee1, scrutinee2, v)))
+              },
+              _ => unreachable!()
+            }
+          }
+        }
+      } else if self.vuf.tree.is_ancestor(v, ve) {
+        let children = self.vuf.tree.children[v].clone();
+        Proof::Cases(children.into_iter().map(|vc| {
+          let hyp = self.version_hyp[vc];
+          let (e1, e2) = self.hyp_eq[&hyp];
+          assert!(self.equal(prev, node, vc));
+          (hyp, self.extract(e1), self.extract(e2), self.explain(prev, node, vc))
+        }).collect())
+      } else {
+        unreachable!()
+      });
+      node = prev;
+    }
+
+    path.reverse();
+
+    if path.len() == 1 { path.pop().unwrap() }
+    else { Proof::Seq(path) }
+  }}}
+
+}
+
+
+#[test]
+fn ematching() {//{{{
+  let mut egraph = VEGraph::new();
+
+  let pattern = SearchPattern::App(IdentId(0), vec![ SearchPattern::MetaVar(0), SearchPattern::MetaVar(0) ]);
+
+  egraph.add_expr(&Expr::App(IdentId(0), vec![
+    Expr::App(IdentId(1), vec![
+      Expr::Var(VarId(0))
+    ]),
+    Expr::Var(VarId(1))
+  ]), ROOT_VERSION);
+
+  egraph.add_expr(&Expr::Var(VarId(2)), ROOT_VERSION);
+
+  let v1 = egraph.fork(ROOT_VERSION);
+  let v2 = egraph.fork(v1);
+
+  let x0 = egraph.add_expr(&Expr::Var(VarId(1)), v1);
+  let x1 = egraph.add_expr(&Expr::App(IdentId(1), vec![ Expr::Var(VarId(0)) ]), v1);
+
+  egraph.union(x0, x1, v1);
+  egraph.add_expr(&Expr::App(IdentId(0), vec![ Expr::Var(VarId(2)), Expr::Var(VarId(2)) ]), v1);
+
+  egraph.add_expr(&Expr::App(IdentId(0), vec![ Expr::Var(VarId(3)), Expr::Var(VarId(3)) ]), v2);
+
+  assert_eq!(egraph.search_all(&pattern, ROOT_VERSION).count(), 0);
+  assert_eq!(egraph.search_all(&pattern, v1).count(), 2);
+  assert_eq!(egraph.search_all(&pattern, v2).count(), 3);
+}//}}}
