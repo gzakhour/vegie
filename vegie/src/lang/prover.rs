@@ -10,9 +10,9 @@ pub struct Prover<'a> {
   arg_eclasses: Vec<ENodeId>,
   leaf_versions: BTreeSet<Version>,
   pub egraph: VEGraph,
-  ctx: &'a mut Ctx,
-  lhs: ENodeId,
-  rhs: ENodeId,
+  pub ctx: &'a mut Ctx,
+  pub lhs: ENodeId,
+  pub rhs: ENodeId,
   proven_true: bool,
   proven_false: bool,
   rules: Vec<(TheoremId, SearchPattern, SearchPattern)>,
@@ -80,7 +80,7 @@ impl Prover<'_> {
     if self.is_done() { return; }
     let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
     for v in 0 .. self.egraph.vuf.tree.parent.len() {
-      for _ in 0 .. 4 {
+      for _ in 0 .. 6 {
         // println!("> constructors_non_overlap");
         self.constructors_non_overlap(v);
         // println!("> constructors_injectivite");
@@ -94,7 +94,7 @@ impl Prover<'_> {
       self.expand_defs(v);
       if self.is_done() { return; }
       // println!("> case_analysis");
-      self.case_analysis(v);
+      // self.case_analysis(v);
     }
   }
 
@@ -164,12 +164,8 @@ impl Prover<'_> {
           if *quota == 0 { continue 'func; }
           *quota -= 1;
           self.mark_expanded[v].insert(*eid);
-          let fresh_args = (0..f_args.len()).map(|_| self.ctx.vars.mk_fresh()).collect::<Vec<_>>();
-          let subst = f_args.iter().zip(&fresh_args).map(|(a,b)| (*a,*b)).collect();
-          new_terms.push((*f_id, eclass, body.subst(&subst)));
-          for (i, arg) in fresh_args.into_iter().enumerate() {
-            new_terms.push((*f_id, args[i], Expr::Var(arg)));
-          }
+          let s = f_args.iter().zip(args).map(|(v,a)| (*v, self.egraph.extract(*a))).collect();
+          new_terms.push((*f_id, eclass, body.subst(&s)));
         }
       }
       for (f_id, eclass, term) in new_terms {
@@ -253,9 +249,9 @@ impl Prover<'_> {
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
           // freshen up pattern and expr
           let vars = pattern.get_vars();
-          let subst = vars.into_iter().map(|v| (v, self.ctx.vars.mk_fresh())).collect();
-          let pattern = pattern.subst(&subst);
-          let expr = expr.subst(&subst);
+          let subst: BTreeMap<VarId, Expr> = todo!(); //vars.into_iter().map(|v| (v, self.ctx.vars.mk_fresh())).collect();
+          let pattern: crate::lang::ast::Pattern = todo!(); // pattern.subst(&subst);
+          let expr = todo!(); // expr.subst(&subst);
 
           let hyp = self.fresh_hyp();
           let v = self.fork(v, hyp);
@@ -315,7 +311,17 @@ impl Prover<'_> {
           }
         }
 
+        // println!("MATCH {}: lhs: {} = {} \t\t {:?}",
+        //   self.ctx.theorems.as_str(lemma_id),
+        //   lhs.to_string(self.ctx),
+        //   self.egraph.extract(eclass).to_string(self.ctx),
+        //   // rhs.to_string(self.ctx),
+        //   // self.egraph.extract(id).to_string(self.ctx),
+        //   bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
+        // );
+
         let id = self.egraph.add_pattern(rhs, &bindings, v);
+
         self.egraph.union(eclass, id, v, ProofEdge::Rewrite(*lemma_id, true, bindings));
         if self.egraph.find(self.lhs,v) == self.egraph.find(self.rhs,v) { return; }
       }
