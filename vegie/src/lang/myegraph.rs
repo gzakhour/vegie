@@ -193,7 +193,7 @@ pub struct VEGraph {
   pub app_enodes: Vec<BTreeMap<ENodeId, BTreeMap<IdentId, Vec<ENodeId>>>>,
   pub case_enodes: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
 
-  proof_graph: BTreeMap<ENodeId, Vec<(Version, ProofEdge, ENodeId)>>,
+  pub proof_graph: BTreeMap<ENodeId, BTreeSet<(Version, ProofEdge, ENodeId)>>,
   version_hyp: Vec<IdentId>,
   hyp_eq: BTreeMap<IdentId, (ENodeId, ENodeId)>,
 }
@@ -296,8 +296,8 @@ impl VEGraph {
 
   pub fn union(&mut self, e1: ENodeId, e2: ENodeId, v: Version, proof: ProofEdge) -> ENodeId {//{{{
     if e1 != e2 {
-      self.proof_graph.entry(e1).or_insert(vec![]).push((v, proof.clone(), e2));
-      self.proof_graph.entry(e2).or_insert(vec![]).push((v, proof.inverse(), e1));
+      self.proof_graph.entry(e1).or_insert(BTreeSet::new()).insert((v, proof.clone(), e2));
+      self.proof_graph.entry(e2).or_insert(BTreeSet::new()).insert((v, proof.inverse(), e1));
     }
 
     let e1p = self.find(e1, v);
@@ -518,7 +518,6 @@ impl SearchPattern {
     })
   }//}}}
 
-
   pub fn get_fvs(&self) -> BTreeSet<u8> {//{{{
     fn aux(p: &SearchPattern, result: &mut BTreeSet<u8>) {
       match p {
@@ -531,6 +530,19 @@ impl SearchPattern {
     result
   }//}}}
 
+  pub fn to_string(&self, ctx: &Ctx) -> String {{{
+    match self {
+      SearchPattern::MetaVar(n) => format!("?{n}"),
+      SearchPattern::App(f, args) =>
+        format!("{}{}{}{}",
+          if args.len() > 0 { "(" } else { "" },
+          ctx.idents.as_str(f),
+          args.iter().map(|a| format!(" {}", a.to_string(ctx))).collect::<Vec<_>>().join(""),
+          if args.len() > 0 { ")" } else { "" }
+        )
+    }
+  }}}
+
 }
 
 
@@ -538,7 +550,6 @@ impl SearchPattern {
 type Bindings = BTreeMap<u8, ENodeId>;
 
 fn consistent(b1: &Bindings, b2: &Bindings) -> Option<Bindings> {//{{{
-  let (b1, b2) = if b1.len() <= b2.len() { (b1, b2) } else { (b2, b1) };
   let mut result = BTreeMap::new();
   for (k, v1) in b1 {
     if let Some(v2) = b2.get(k) { if v1 != v2 { return None; } }
@@ -554,62 +565,63 @@ pub enum StructuralOrd {
 
 impl VEGraph {
 
-  pub fn search(&self, eclass: ENodeId, pat: &SearchPattern, v: Version, limit: usize, millis: u64) -> Vec<Bindings> {//{{{
+  pub fn search(&self, eclass: ENodeId, pat: &SearchPattern, v: Version, limit: usize, millis: u64) -> Vec<(ENodeId, Bindings)> {//{{{
     use SearchPattern::*;
-    let eclass = self.query(eclass, v);
 
-    match pat {
-      MetaVar(var) => {
-        let mut result = vec![];
-        for i in 0 .. self.enodes_per_eclass[v][&eclass].len() {
-          let enode = self.enodes_per_eclass[v][&eclass][i];
-          if enode == self.query(enode, v) {
-            result.push(Bindings::from([ (*var, enode) ]));
+    fn match_enode(egraph: &VEGraph, enode: ENodeId, pat: &SearchPattern, v: Version, partial: &Bindings, limit: usize) -> Vec<(ENodeId, Bindings)> {
+      match pat {
+        MetaVar(var) => {
+          if let Some(bound) = partial.get(var) {
+            if *bound == enode { vec![ (enode, partial.clone()) ] }
+            else { vec![] }
+          } else {
+            let mut new = partial.clone();
+            new.insert(*var, enode);
+            vec![ (enode, new) ]
           }
-        }
-        return result
-      },
+        },
 
-      App(ident, args) => {
-        let mut result = vec![];
-
-        use std::time::{Instant, Duration};
-        let start = Instant::now();
-
-        'enode_search: for i in 0 .. self.app_enodes[v].get(&eclass).unwrap_or(&BTreeMap::new()).get(ident).map(|l| l.len()).unwrap_or(0) {
-          if start.elapsed() >= Duration::from_millis(millis) { break; }
-          let enode = self.app_enodes[v][&eclass][ident][i];
-          let ENode::App(_, enode_args) = self.hashcons.get(&enode).clone() else { continue };
-
-          if args.len() != enode_args.len() { continue; }
-          // only e-match on canonicals?
-          if enode_args.iter().any(|a| self.query(*a,v) != *a) { continue; }
-
-          let mut bindings = vec![ Bindings::new() ];
-
-          for (eclass, pat) in enode_args.iter().zip(args) {
-            if start.elapsed() >= Duration::from_millis(millis) { break 'enode_search; }
-            if bindings.len() == 0 { continue 'enode_search; }
-            let subbindings = self.search(*eclass, pat, v, limit, millis);
-            if subbindings.len() == 0 { continue 'enode_search; }
-            let mut consistent_bindings = vec![];
-            for (i, j) in cartesian(bindings.len(), subbindings.len()) {
-              if start.elapsed() >= Duration::from_millis(millis) { break 'enode_search; }
-              if let Some(cons) = consistent(&bindings[bindings.len()-i-1], &subbindings[subbindings.len()-j-1]) {
-                consistent_bindings.push(cons);
-                if consistent_bindings.len() > limit { break; }
-              }
+        App(pat_f, pat_args) => {
+          let ENode::App(enode_f, enode_args) = egraph.hashcons.get(&enode).clone() else { unreachable!() };
+          assert_eq!(enode_f, *pat_f);
+          assert_eq!(enode_args.len(), pat_args.len());
+          let mut bindings = vec![ (enode, partial.clone()) ];
+          for (pat, eclass) in pat_args.into_iter().zip(enode_args) {
+            let mut new_bindings = vec![];
+            for (_, binding) in bindings {
+              new_bindings.extend(&mut match_eclass(egraph, eclass, pat, v, &binding, limit).into_iter().map(|(_,b)| (enode, b)));
+              if new_bindings.len() >= limit { break; }
             }
-            bindings = consistent_bindings;
+            bindings = new_bindings;
           }
-
-          result.extend(bindings);
+          bindings
         }
-
-        return result;
       }
-
     }
+
+    fn match_eclass(egraph: &VEGraph, eclass: ENodeId, pat: &SearchPattern, v: Version, partial: &Bindings, limit: usize) -> Vec<(ENodeId, Bindings)> {
+      let eclass = egraph.query(eclass, v);
+      let mut bindings = vec![];
+      match pat {
+        MetaVar(var) => {
+          for enode in egraph.enodes_per_eclass[v][&eclass].iter().rev() {
+            bindings.append(&mut match_enode(egraph, *enode, pat, v, partial, limit));
+            if bindings.len() >= limit { return bindings; }
+          }
+        }
+        App(pat_f, pat_args) => {
+          let app_enode_len = egraph.app_enodes[v].get(&eclass).and_then(|m| m.get(pat_f)).map(|l| l.len()).unwrap_or(0);
+          for i in (0 .. app_enode_len).rev() {
+            let enode = egraph.app_enodes[v][&eclass][pat_f][i];
+            bindings.append(&mut match_enode(egraph, enode, pat, v, partial, limit));
+            if bindings.len() >= limit { return bindings; }
+          }
+        }
+      }
+      bindings
+    }
+
+    match_eclass(self, eclass, pat, v, &Bindings::new(), limit)
   }//}}}
 
   pub fn all_eclasses(&self, v: Version) -> Vec<ENodeId> {//{{{
@@ -618,7 +630,7 @@ impl VEGraph {
 
   pub fn search_all(&self, pat: &SearchPattern, v: Version, limit: usize) -> impl Iterator<Item=(ENodeId, Bindings)> {//{{{
     let millis = 1000 / self.all_eclasses(v).len();
-    self.all_eclasses(v).into_iter().flat_map(move |e| self.search(e, pat, v, limit, millis as u64).into_iter().map(move |b| (e,b)))
+    self.all_eclasses(v).into_iter().flat_map(move |e| self.search(e, pat, v, limit, millis as u64))
   }//}}}
 
   pub fn add_pattern(&mut self, pat: &SearchPattern, bindings: &Bindings, v: Version) -> ENodeId {//{{{
@@ -778,6 +790,34 @@ impl VEGraph {
 
 }
 
+impl ENode {
+  pub fn to_string(&self, ctx: &Ctx) -> String {{{
+    match self {
+      ENode::Var(var) => ctx.vars.as_str(var).to_string(),
+      ENode::App(f, args) =>
+        format!("{}{}{}{}",
+          if args.len() > 0 { "(" } else { "" },
+          ctx.idents.as_str(f).to_string(),
+          args.iter().map(|a| format!(" {}", a.0)).collect::<Vec<String>>().join(""),
+          if args.len() > 0 { ")" } else { "" },
+        ),
+      ENode::Case(_, _) => "(case - -)".to_string(),
+    }
+  }}}
+}
+
+impl VEGraph {
+
+  pub fn visualise_proof_graph(&self, ctx: &Ctx) {{{
+    for (enode_src, edges) in &self.proof_graph {
+      println!("{}: {}", enode_src.0, self.hashcons.get(enode_src).to_string(ctx));
+      for (_, step, enode_trgt) in edges {
+        println!("    {:?}: {}: {}", step, enode_trgt.0, self.hashcons.get(enode_trgt).to_string(ctx));
+      }
+    }
+  }}}
+
+}
 
 #[test]
 fn ematching() {//{{{

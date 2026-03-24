@@ -39,11 +39,11 @@ fn main() {
             let (line, _) = name.line_col(&contents);
             let name = name.data;
             let axiom_name = parser.ctx.theorems.as_str(&name).to_string();
-            println!("\x1b[33maxiom\x1b[0m:{filename}:{line}: {axiom_name}");
+            println!("\x1b[33maxiom\x1b[0m:{filename}:{line}: {}: {axiom_name}", name.0);
             parser.ctx.proven_theorem.insert(name);
           },
 
-          Command::Theorem  { name, lhs, rhs, is_assumed: false, .. } => {
+          Command::Theorem  { name, is_assumed: false, .. } => {
             let (line, _) = name.line_col(&contents);
             let name = name.data;
             let theorem_name = parser.ctx.theorems.as_str(&name).to_string();
@@ -64,10 +64,9 @@ fn main() {
             println!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
             if code == 32 {
               println!("{}", prover.explain());
+              // prover.egraph.visualise_proof_graph(&prover.ctx);
               parser.ctx.proven_theorem.insert(name);
             }
-            println!("  > lhs = {}", lhs.to_string(&parser.ctx));
-            println!("  > rhs = {}", rhs.to_string(&parser.ctx));
           },
 
           Command::Eval { expr, typ, } => {

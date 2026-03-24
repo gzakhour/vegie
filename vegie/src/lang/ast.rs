@@ -9,9 +9,9 @@ pub struct IdentId(pub usize);
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct VarId(pub usize);
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct TypeId(usize);
+pub struct TypeId(pub usize);
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct TheoremId(usize);
+pub struct TheoremId(pub usize);
 
 #[derive(Clone, Debug)]
 pub struct Constructor {
@@ -95,10 +95,10 @@ impl Id for TheoremId {
 
 impl Expr {
 
-  pub fn subst(&self, subst: &BTreeMap<VarId, VarId>) -> Expr {//{{{
+  pub fn subst(&self, subst: &BTreeMap<VarId, Expr>) -> Expr {//{{{
     match self {
       // TODO what about unbound variables here?
-      Expr::Var(id) => Expr::Var(*subst.get(id).unwrap_or(id)),
+      Expr::Var(id) => subst.get(id).cloned().unwrap_or(self.clone()),
 
       Expr::Cons(ident, args) =>
         Expr::Cons(*ident, args.iter().map(|a| a.subst(subst)).collect()),

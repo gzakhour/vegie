@@ -23,9 +23,11 @@
   (mult ?x (add ?y ?z))
   (add (mult ?x ?y) (mult ?x ?z)))
 
-(theorem test ((?x nat))
-  (mult ?x ?x)
-  (square ?x)
+(theorem test ((?x nat) (?y nat))
+  (square (add ?x ?y))
+  (add (square ?x)
+    (add (double (mult ?x ?y))
+         (square ?y)))
 )
 
 ; (theorem binomial ((?x nat) (?y nat))
