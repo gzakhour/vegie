@@ -8,7 +8,3 @@ edition = "2024"
 # smallvec = { version = "1.8.0", features = ["union", "const_generics"] }
 # indexmap = { version = "2.7.0" }
 # egg = { version = "0.10.0" }
-
-[[bin]]
-name = "scratch"
-path = "src/scratch.rs"
