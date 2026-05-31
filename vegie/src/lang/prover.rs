@@ -312,15 +312,15 @@ impl Prover<'_> {
           }
         }
 
-        println!("MATCH {}: enode={}, lhs: {} = {} \t\t {:?}",
-          self.ctx.theorems.as_str(lemma_id),
-          enode.0,
-          lhs.to_string(self.ctx),
-          self.egraph.extract(enode).to_string(self.ctx),
-          // rhs.to_string(self.ctx),
-          // self.egraph.extract(id).to_string(self.ctx),
-          bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
-        );
+        // println!("MATCH {}: enode={}, lhs: {} = {} \t\t {:?}",
+        //   self.ctx.theorems.as_str(lemma_id),
+        //   enode.0,
+        //   lhs.to_string(self.ctx),
+        //   self.egraph.extract(enode).to_string(self.ctx),
+        //   // rhs.to_string(self.ctx),
+        //   // self.egraph.extract(id).to_string(self.ctx),
+        //   bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
+        // );
 
         let id = self.egraph.add_pattern(rhs, &bindings, v);
 

@@ -23,16 +23,11 @@
   (mult ?x (add ?y ?z))
   (add (mult ?x ?y) (mult ?x ?z)))
 
-(theorem test ((?x nat) (?y nat) (?z nat))
-  (add ?x (add ?y ?z))
-  (add ?y (add ?x ?z)))
+(theorem test ((?x nat) (?y nat))
+  (add ?x (double ?y))
+  (add ?y (add ?x ?y)))
 
-; 4 -> 8 -> 10 -> 6
-;   add 0 (add 1 2)
-; = add (add 0 1) 2   [add_comm]
-; = add (add 1 0) 2   [congr add add_comm id]
-; = add 1 (add 0 2)   [add_assoc <-]
 
-; (theorem binomial ((?x nat) (?y nat))
-;   (square (add ?x ?y))
-;   (add (square ?x) (add (double (mult ?x ?y)) (square ?y))))
+(theorem binomial ((?x nat) (?y nat))
+  (square (add ?x ?y))
+  (add (square ?x) (add (double (mult ?x ?y)) (square ?y))))
