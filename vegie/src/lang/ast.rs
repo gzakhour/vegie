@@ -189,9 +189,9 @@ impl Proof {
     use Proof::*;
     match self {
       Refl => "refl".to_string(),
-      Definition(ident, b) => format!("(expand {}{})", if *b { "" } else { "<- " }, ctx.idents.as_str(ident)),
+      Definition(ident, b) => format!("({} {})", if *b { "unfold" } else { "fold" }, ctx.idents.as_str(ident)),
       Congr(f, args) => {
-        let mut result = format!("({}", ctx.idents.as_str(f));
+        let mut result = format!("(congr {}", ctx.idents.as_str(f));
         for a in args { result.push_str(&format!(" {}", a.to_string(ctx))); }
         result.push(')');
         return result
