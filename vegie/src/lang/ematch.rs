@@ -100,28 +100,25 @@ impl VEGraph {
 
 
         SearchPattern::App(f, args) => {
-          let mut result = vec![];
 
-          let default_map = BTreeMap::new();
-          let default_vec = vec![];
+          if let ENode::App(enode_f, enode_args) = egraph.hashcons.get(&enode) {
 
-          let app_enodes: &Vec<ENodeId> = egraph.app_enodes[v].get(&eclass).unwrap_or(&default_map)
-                                               .get(f).unwrap_or(&default_vec);
+            if enode_f != f { return vec![] }
 
-          for app in app_enodes.iter() {
-            let ENode::App(enode_f, enode_args) = egraph.hashcons.get(&app) else { unreachable!() };
             assert_eq!(enode_f, f);
             assert_eq!(enode_args.len(), args.len());
 
-            let mut local_result = bindings.clone();
+            let mut result = bindings.clone();
             for i in 0 .. args.len() {
-              local_result = aux(egraph, enode_args[i], &args[i], v, limit, millis, local_result);
+              result = aux(egraph, enode_args[i], &args[i], v, limit, millis, result);
             }
 
-            result.append(&mut local_result);
+            result
+
+          } else {
+            vec![]
           }
 
-          result
         }
 
       }
