@@ -620,7 +620,7 @@ impl VEGraph {
     let mut node = dest.clone();
     while node != src {
       let (ve, step, prev) = prev[&node].clone();
-      println!("==== GOING BACK FROM {} to {}", node.0, prev.0);
+      // println!("==== GOING BACK FROM {} to {}", node.0, prev.0);
       path.push(if self.vuf.tree.is_ancestor(ve, v) {
         match step.clone() {
           ProofEdge::Definition(ident, dir) =>
