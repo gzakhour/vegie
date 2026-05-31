@@ -6,3 +6,4 @@ pub mod parser;
 pub mod eval;
 pub mod prover;
 pub mod myegraph;
+pub mod ematch;

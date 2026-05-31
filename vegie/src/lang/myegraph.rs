@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::lang::ast::{Id, VarId, IdentId, TheoremId};
 use crate::lang::ast::{Expr, Pattern, Proof};
 use crate::lang::ctx::{Ctx, TypeInfo};
+use crate::lang::ematch::{Bindings,SearchPattern};
 use crate::util::{cartesian};
 
 pub type Version = usize;
@@ -186,7 +187,7 @@ pub struct VEGraph {
   pub vuf: VUF,
   parents: Vec<Vec<ENodeId>>,
 
-  enodes_per_versions: Vec<BTreeSet<ENodeId>>,
+  pub enodes_per_versions: Vec<BTreeSet<ENodeId>>,
   pub enodes_per_eclass: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
 
   pub var_enodes: Vec<BTreeMap<ENodeId, Vec<ENodeId>>>,
@@ -491,63 +492,6 @@ fn vegraph() {//{{{
 
 
 
-#[derive(Clone, Debug)]
-pub enum SearchPattern {
-  MetaVar(u8),
-  App(IdentId, Vec<SearchPattern>),
-}
-
-impl SearchPattern {
-
-  pub fn from_expr_with_args(e: &Expr, args: &Vec<VarId>) -> Option<Self> {//{{{
-    Some(match e {
-      Expr::Cons(id, eargs) => {
-        let mut new_args = vec![];
-        for a in eargs { new_args.push(Self::from_expr_with_args(a, args)?); }
-        SearchPattern::App(*id, new_args)
-      },
-      Expr::App(id, eargs) => {
-        let mut new_args = vec![];
-        for a in eargs { new_args.push(Self::from_expr_with_args(a, args)?); }
-        SearchPattern::App(*id, new_args)
-      },
-      Expr::Var(id) => {
-        SearchPattern::MetaVar(args.iter().position(|p| p == id)? as u8)
-      },
-      Expr::Case(_, _) => None?,
-    })
-  }//}}}
-
-  pub fn get_fvs(&self) -> BTreeSet<u8> {//{{{
-    fn aux(p: &SearchPattern, result: &mut BTreeSet<u8>) {
-      match p {
-        SearchPattern::MetaVar(n) => { result.insert(*n); }
-        SearchPattern::App(_, args) => { for a in args { aux(a, result) } }
-      }
-    }
-    let mut result = BTreeSet::new();
-    aux(self, &mut result);
-    result
-  }//}}}
-
-  pub fn to_string(&self, ctx: &Ctx) -> String {{{
-    match self {
-      SearchPattern::MetaVar(n) => format!("?{n}"),
-      SearchPattern::App(f, args) =>
-        format!("{}{}{}{}",
-          if args.len() > 0 { "(" } else { "" },
-          ctx.idents.as_str(f),
-          args.iter().map(|a| format!(" {}", a.to_string(ctx))).collect::<Vec<_>>().join(""),
-          if args.len() > 0 { ")" } else { "" }
-        )
-    }
-  }}}
-
-}
-
-
-
-type Bindings = BTreeMap<u8, ENodeId>;
 
 fn consistent(b1: &Bindings, b2: &Bindings) -> Option<Bindings> {//{{{
   let mut result = BTreeMap::new();
@@ -565,72 +509,8 @@ pub enum StructuralOrd {
 
 impl VEGraph {
 
-  pub fn search(&self, eclass: ENodeId, pat: &SearchPattern, v: Version, limit: usize, millis: u64) -> Vec<(ENodeId, Bindings)> {//{{{
-    use SearchPattern::*;
-
-    fn match_enode(egraph: &VEGraph, enode: ENodeId, pat: &SearchPattern, v: Version, partial: &Bindings, limit: usize) -> Vec<(ENodeId, Bindings)> {
-      match pat {
-        MetaVar(var) => {
-          if let Some(bound) = partial.get(var) {
-            if *bound == enode { vec![ (enode, partial.clone()) ] }
-            else { vec![] }
-          } else {
-            let mut new = partial.clone();
-            new.insert(*var, enode);
-            vec![ (enode, new) ]
-          }
-        },
-
-        App(pat_f, pat_args) => {
-          let ENode::App(enode_f, enode_args) = egraph.hashcons.get(&enode).clone() else { unreachable!() };
-          assert_eq!(enode_f, *pat_f);
-          assert_eq!(enode_args.len(), pat_args.len());
-          let mut bindings = vec![ (enode, partial.clone()) ];
-          for (pat, eclass) in pat_args.into_iter().zip(enode_args) {
-            let mut new_bindings = vec![];
-            for (_, binding) in bindings {
-              new_bindings.extend(&mut match_eclass(egraph, eclass, pat, v, &binding, limit).into_iter().map(|(_,b)| (enode, b)));
-              if new_bindings.len() >= limit { break; }
-            }
-            bindings = new_bindings;
-          }
-          bindings
-        }
-      }
-    }
-
-    fn match_eclass(egraph: &VEGraph, eclass: ENodeId, pat: &SearchPattern, v: Version, partial: &Bindings, limit: usize) -> Vec<(ENodeId, Bindings)> {
-      let eclass = egraph.query(eclass, v);
-      let mut bindings = vec![];
-      match pat {
-        MetaVar(var) => {
-          for enode in egraph.enodes_per_eclass[v][&eclass].iter().rev() {
-            bindings.append(&mut match_enode(egraph, *enode, pat, v, partial, limit));
-            if bindings.len() >= limit { return bindings; }
-          }
-        }
-        App(pat_f, pat_args) => {
-          let app_enode_len = egraph.app_enodes[v].get(&eclass).and_then(|m| m.get(pat_f)).map(|l| l.len()).unwrap_or(0);
-          for i in (0 .. app_enode_len).rev() {
-            let enode = egraph.app_enodes[v][&eclass][pat_f][i];
-            bindings.append(&mut match_enode(egraph, enode, pat, v, partial, limit));
-            if bindings.len() >= limit { return bindings; }
-          }
-        }
-      }
-      bindings
-    }
-
-    match_eclass(self, eclass, pat, v, &Bindings::new(), limit)
-  }//}}}
-
   pub fn all_eclasses(&self, v: Version) -> Vec<ENodeId> {//{{{
     self.enodes_per_eclass[v].keys().copied().collect()
-  }//}}}
-
-  pub fn search_all(&self, pat: &SearchPattern, v: Version, limit: usize) -> impl Iterator<Item=(ENodeId, Bindings)> {//{{{
-    let millis = 1000 / self.all_eclasses(v).len();
-    self.all_eclasses(v).into_iter().flat_map(move |e| self.search(e, pat, v, limit, millis as u64))
   }//}}}
 
   pub fn add_pattern(&mut self, pat: &SearchPattern, bindings: &Bindings, v: Version) -> ENodeId {//{{{
@@ -734,12 +614,13 @@ impl VEGraph {
       }
     }
 
-    if !found { return Proof::Refl } // TODO BUG!
+    if !found { unreachable!() }
 
     let mut path: Vec<Proof> = vec![];
     let mut node = dest.clone();
     while node != src {
       let (ve, step, prev) = prev[&node].clone();
+      println!("==== GOING BACK FROM {} to {}", node.0, prev.0);
       path.push(if self.vuf.tree.is_ancestor(ve, v) {
         match step.clone() {
           ProofEdge::Definition(ident, dir) =>

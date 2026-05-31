@@ -64,7 +64,9 @@ fn main() {
             println!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
             if code == 32 {
               println!("{}", prover.explain());
-              // prover.egraph.visualise_proof_graph(&prover.ctx);
+              println!("=== DEBUBG ===");
+              println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
+              prover.egraph.visualise_proof_graph(&prover.ctx);
               parser.ctx.proven_theorem.insert(name);
             }
           },
@@ -87,34 +89,4 @@ fn main() {
     }
   }
 
-
-  // if false {
-  //   let mut _egraph = VersionedEGraph::with_ematching_caches(1);
-
-  //   let mut egraph = _egraph.project_mut(crate::egraph::version_tree::VersionTree::ROOT_VERSION);
-
-  //   let [_0, _1, _2] = ["0", "1", "2"].map(|num| egraph.add(ENode::constant(SymbolIds::from_string(num))));
-  //   let f: Operator = SymbolIds::from_string("f");
-  //   let g: Operator = SymbolIds::from_string("g");
-  //   let _f_0 = egraph.add(ENode::application(f, vec![_0]));
-  //   let _f_1 = egraph.add(ENode::application(f, vec![_1]));
-  //   let _f_2 = egraph.add(ENode::application(f, vec![_2]));
-
-  //   egraph.union(_0, _f_0);
-
-  //   let pattern = |s: &str| s.parse::<Pattern<ENode>>().unwrap();
-
-  //   let lhs = pattern("(f ?x)");
-  //   let rhs = pattern("(g ?x)");
-
-  //   egraph.run(
-  //     &RunnerConfig::default(),
-  //     &[
-  //       ("hello".to_string(), lhs, rhs)
-  //     ]
-  //   );
-
-  //   let g_0 = egraph.add(ENode::application(g, vec![_0]));
-  //   println!("{:?}", egraph.find(_0) == egraph.find(g_0));
-  // }
 }

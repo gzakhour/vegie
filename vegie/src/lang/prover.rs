@@ -3,7 +3,8 @@ use std::collections::{BTreeSet, BTreeMap};
 use crate::lang::ast::{TheoremId, TypeId, VarId, IdentId};
 use crate::lang::ast::{Constructor, Expr, Proof};
 use crate::lang::ctx::{Ctx};
-use crate::lang::myegraph::{ROOT_VERSION, Version, VEGraph, ENodeId, ENode, SearchPattern, StructuralOrd, ProofEdge};
+use crate::lang::myegraph::{ROOT_VERSION, Version, VEGraph, ENodeId, ENode, StructuralOrd, ProofEdge};
+use crate::lang::ematch::{SearchPattern};
 
 pub struct Prover<'a> {
   theorem: TheoremId,
@@ -290,7 +291,7 @@ impl Prover<'_> {
     for (lemma_id, lhs, rhs) in self.rules.iter().rev() { // search backwards is really better
       // println!("Searching for {} while proving {}", self.ctx.theorems.as_str(lemma_id), self.ctx.theorems.as_str(&self.theorem));
       let search_results = self.egraph.search_all(lhs, v, 20).collect::<Vec<_>>();
-      'search_result: for (eclass, bindings) in search_results {
+      'search_result: for (enode, bindings) in search_results {
 
         // we must check decreasing measure here
         if *lemma_id == self.theorem {
@@ -311,18 +312,19 @@ impl Prover<'_> {
           }
         }
 
-        // println!("MATCH {}: lhs: {} = {} \t\t {:?}",
-        //   self.ctx.theorems.as_str(lemma_id),
-        //   lhs.to_string(self.ctx),
-        //   self.egraph.extract(eclass).to_string(self.ctx),
-        //   // rhs.to_string(self.ctx),
-        //   // self.egraph.extract(id).to_string(self.ctx),
-        //   bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
-        // );
+        println!("MATCH {}: enode={}, lhs: {} = {} \t\t {:?}",
+          self.ctx.theorems.as_str(lemma_id),
+          enode.0,
+          lhs.to_string(self.ctx),
+          self.egraph.extract(enode).to_string(self.ctx),
+          // rhs.to_string(self.ctx),
+          // self.egraph.extract(id).to_string(self.ctx),
+          bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
+        );
 
         let id = self.egraph.add_pattern(rhs, &bindings, v);
 
-        self.egraph.union(eclass, id, v, ProofEdge::Rewrite(*lemma_id, true, bindings));
+        self.egraph.union(enode, id, v, ProofEdge::Rewrite(*lemma_id, true, bindings));
         if self.egraph.find(self.lhs,v) == self.egraph.find(self.rhs,v) { return; }
       }
     }
