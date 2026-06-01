@@ -181,7 +181,7 @@ impl Expr {
         let mut result = "(case ".to_string();
         result.push_str(&scrutinee.to_string(ctx));
         for (arg, expr) in arms {
-          result.push('(');
+          result.push_str(" (");
           result.push_str(&arg.to_string(ctx));
           result.push(' ');
           result.push_str(&expr.to_string(ctx));
@@ -190,6 +190,25 @@ impl Expr {
         result.push(')');
         result
       }
+    }
+  }
+}
+
+impl crate::lang::myegraph::ProofEdge {
+  pub fn to_string(&self, ctx: &Ctx) -> String {
+    fn op(x: String, dir: &bool) -> String {
+      if *dir { format!("{x}⁻¹") } else { x }
+    }
+
+    use crate::lang::myegraph::ProofEdge::*;
+    match self {
+      Definition(id, dir) => op(ctx.idents.as_str(id).to_string(), dir),
+      Congr => String::from("congr"),
+      Rewrite(id, dir, bindings) => format!("{} with {bindings:?}", op(ctx.theorems.as_str(id).to_string(), dir)),
+      Absurd(e1, e2) => format!("n{} = n{}: ※", e1.0, e2.0),
+      Hyp(id, dir) => format!("hyp: {}", op(ctx.idents.as_str(id).to_string(), dir)),
+      CaseReduct(id, arm, dir) => format!("case:{} arm={arm}", op(ctx.idents.as_str(id).to_string(), dir)),
+      Injective(arg, e1, e2) => format!("n{} = n{}: inject {arg}", e1.0, e2.0),
     }
   }
 }

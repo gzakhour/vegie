@@ -571,39 +571,34 @@ impl VEGraph {
       use std::cmp::{Ordering};
       #[derive(Eq,PartialEq)]
       struct Node { node: ENodeId, cost: usize }
-      impl Ord for Node {
-        fn cmp(&self, other: &Self) -> Ordering {
-          other.cost.cmp(&self.cost)
-        }
-      }
-      impl PartialOrd for Node {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-          Some(self.cmp(&other))
-        }
-      }
+      impl Ord for Node { fn cmp(&self, other: &Self) -> Ordering { other.cost.cmp(&self.cost) } }
+      impl PartialOrd for Node { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(&other)) } }
 
       let mut dist = BTreeMap::new();
       let mut queue = BinaryHeap::new();
-      let mut visited = BTreeSet::new();
+      // let mut visited = BTreeSet::new();
 
       queue.push(Node { node: src.clone(), cost: 0 });
       dist.insert(src.clone(), 0);
 
       while let Some(Node { node, cost }) = queue.pop() {
-        if node == dest { found = true; break; }
+        // if node == dest { found = true; break; }
         // if visited.contains(&node) { continue; }
-        visited.insert(node);
+        // visited.insert(node);
 
         'edge_search: for (ve, step, next) in &self.proof_graph[&node] {
           // if visited.contains(next) { continue; }
           let cost: usize = cost +
-            if self.vuf.tree.is_ancestor(*ve, v) { 1 }
+            if v == *ve { 1 }
+            else if self.vuf.tree.is_ancestor(*ve, v) { 2 }
             else if self.vuf.tree.is_ancestor(v, *ve) {
               let dist = self.vuf.tree.distance(v, *ve);
               for vc in self.vuf.tree.all_between(v, *ve) {
+                // check that the equality also holds at all versions in between
+                // i.e. don't consider an edge at a subversion if there won't be a path at other subversions
                 if !self.equal(node, *next, vc) { continue 'edge_search; }
               }
-              7 << dist
+              15 << dist
             } else { continue };
           if cost < *dist.get(next).unwrap_or(&usize::MAX) {
             queue.push(Node { node: *next, cost });
@@ -611,16 +606,17 @@ impl VEGraph {
             dist.insert(*next, cost);
           }
         }
+
       }
     }
 
-    if !found { unreachable!() }
+    // if !found { panic!("The proof does not contain all the required edges to show the equality!") }
 
     let mut path: Vec<Proof> = vec![];
     let mut node = dest.clone();
     while node != src {
       let (ve, step, prev) = prev[&node].clone();
-      // println!("==== GOING BACK FROM {} to {}", node.0, prev.0);
+      // println!("==== {v}: GOING BACK FROM {} to {} using edge at version {ve}", node.0, prev.0);
       path.push(if self.vuf.tree.is_ancestor(ve, v) {
         match step.clone() {
           ProofEdge::Definition(ident, dir) =>
@@ -690,12 +686,22 @@ impl ENode {
 impl VEGraph {
 
   pub fn visualise_proof_graph(&self, ctx: &Ctx) {{{
-    for (enode_src, edges) in &self.proof_graph {
-      println!("{}: {}", enode_src.0, self.hashcons.get(enode_src).to_string(ctx));
-      for (_, step, enode_trgt) in edges {
-        println!("    {:?}: {}: {}", step, enode_trgt.0, self.hashcons.get(enode_trgt).to_string(ctx));
+    eprintln!("digraph G {{");
+    for (eid, _) in &self.proof_graph {
+      eprintln!("n{} [label=\"n{}: {}\"];", eid.0, eid.0, self.extract(*eid).to_string(ctx));
+    }
+    for (source, edges) in &self.proof_graph {
+      for (v, step, target) in edges {
+        use ProofEdge::*;
+        match step {
+          Definition(_,dir) | Rewrite(_, dir, _) | Hyp(_, dir) | CaseReduct(_, _, dir) =>
+            if !dir { continue }
+          _ => {}
+        }
+        eprintln!("n{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
       }
     }
+    eprintln!("}}");
   }}}
 
 }
