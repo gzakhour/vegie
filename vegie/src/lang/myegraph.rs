@@ -97,6 +97,18 @@ impl VTree {
     self.all_between(v0, v1).len() - 1
   }//}}}
 
+  pub fn all_versions(&self) -> impl Iterator<Item=Version> {{{
+    (0 .. self.parent.len())
+  }}}
+
+  pub fn all_descendents(&self, v: Version) -> Vec<Version> {{{
+    let mut result = vec![ v ];
+    for v in &self.children[v] {
+      result.append(&mut self.all_descendents(*v));
+    }
+    result
+  }}}
+
 }
 
 
@@ -568,10 +580,13 @@ impl ENode {
 
 impl VEGraph {
 
-  pub fn visualise_proof_graph(&self, ctx: &Ctx) {{{
+  pub fn visualise_proof_graph(&self, ctx: &Ctx, source: ENodeId) {{{
+    let costs = self.edge_costs(source);
     eprintln!("digraph G {{");
     for (eid, _) in &self.proof_graph {
-      eprintln!("n{} [label=\"n{}: {}\"];", eid.0, eid.0, self.extract(*eid).to_string(ctx));
+      eprintln!("n{} [label=\"n{}: {}\\n{}\"];",
+        eid.0, eid.0, self.extract(*eid).to_string(ctx),
+        costs.get(eid).unwrap_or(&Default::default()).iter().map(|(v,c)| format!("v={v},cost={},via=({},{})", c.cost, c.prev.0, c.version)).collect::<Vec<_>>().join("; "));
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
