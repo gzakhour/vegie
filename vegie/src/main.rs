@@ -58,7 +58,7 @@ fn main() {
           if code == 32 {
             println!("=== DEBUG ===");
             println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
-            prover.egraph.visualise_proof_graph(&prover.ctx);
+            prover.egraph.visualise_proof_graph(&prover.ctx, prover.lhs);
 
             println!("{}", prover.explain());
             parser.ctx.proven_theorem.insert(name);

@@ -1,8 +1,18 @@
 
 use crate::lang::ast::{Proof};
-use crate::lang::myegraph::{VEGraph, ENode, ProofEdge, ENodeId, Version};
+use crate::lang::myegraph::{VEGraph, ENode, ProofEdge, ENodeId, Version, ROOT_VERSION};
 
-use std::collections::{BTreeMap};
+use std::collections::{BTreeMap, BTreeSet};
+
+
+#[derive(Debug)]
+pub struct ExplainCost {
+  pub cost: usize,
+  pub prev: ENodeId,
+  pub version: Version,
+  pub proof: ProofEdge,
+}
+
 
 impl VEGraph {
 
@@ -111,5 +121,59 @@ impl VEGraph {
     if path.len() == 1 { path.pop().unwrap() }
     else { Proof::Seq(path) }
   }}}
+
+
+  pub fn edge_costs(&self, source: ENodeId) -> BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> {
+
+    let mut result: BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> = BTreeMap::new();
+
+    result.insert(source, self.vuf.tree.all_versions().map(|v| (v, ExplainCost {
+      cost: 0,
+      prev: source,
+      version: v,
+      proof: ProofEdge::Congr, // anything will do
+    })).collect());
+
+    let mut queue = vec![ source ];
+    let mut visited: BTreeSet<ENodeId> = BTreeSet::new();
+
+    while let Some(node) = queue.pop() {
+      if visited.contains(&node) { continue; }
+      visited.insert(node);
+
+      for (v, proof, next) in self.proof_graph.get(&node).unwrap_or(&Default::default()) {
+
+        result.entry(*next).or_insert_with(|| BTreeMap::new());
+
+        for vc in self.vuf.tree.all_descendents(*v) {
+          let c = self.vuf.tree.all_between(ROOT_VERSION, vc).iter()
+                               .filter_map(|v| result[&node].get(&v))
+                               .map(|c| c.cost)
+                               .min()
+                               .unwrap_or(usize::MAX);
+
+          if c == usize::MAX { continue; }
+          let new_cost = c + 1;
+
+          if result[&next].get(&vc).map(|c| c.cost).unwrap_or(usize::MAX) > new_cost {
+            let entry = result.get_mut(&next).unwrap().entry(vc).or_insert(ExplainCost {
+              cost: usize::MAX, prev: node, proof: ProofEdge::Congr, version: *v
+            });
+            entry.cost = new_cost;
+            entry.prev = node;
+            entry.version = *v;
+            entry.proof = proof.clone();
+            visited.remove(next);
+          }
+        }
+
+        queue.push(*next);
+      }
+    }
+
+    result
+
+  }
+
 
 }
