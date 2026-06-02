@@ -1,5 +1,5 @@
 use crate::lang::myegraph::{Version, ENodeId, ENode, VEGraph};
-use crate::lang::ast::{IdentId, VarId, Expr, Pattern, Proof};
+use crate::lang::ast::{IdentId, VarId, Expr};
 use crate::lang::ctx::{Ctx};
 
 use std::collections::{BTreeSet, BTreeMap};

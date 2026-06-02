@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 
 use crate::lang::ast::{TheoremId, TypeId, VarId, IdentId};
-use crate::lang::ast::{Constructor, Expr, Proof};
+use crate::lang::ast::{Constructor, Expr};
 use crate::lang::ctx::{Ctx};
 use crate::lang::myegraph::{ROOT_VERSION, Version, VEGraph, ENodeId, ENode, StructuralOrd, ProofEdge};
 use crate::lang::ematch::{SearchPattern};
@@ -79,8 +79,8 @@ impl Prover<'_> {
 
   pub fn proof_iter(&mut self) {
     if self.is_done() { return; }
-    let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
-    for v in 0 .. self.egraph.vuf.tree.parent.len() {
+    // let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
+    for v in 0 .. self.egraph.vuf.tree.parent.len() { // TODO should this be leaves?
       for _ in 0 .. 6 {
         // println!("> constructors_non_overlap");
         self.constructors_non_overlap(v);
