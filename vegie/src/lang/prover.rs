@@ -246,10 +246,10 @@ impl Prover<'_> {
         let ENode::App(constructor, _) = self.egraph.hashcons.get(&scrutinee).clone() else { continue };
         if !self.ctx.type_info[&constructor].constructor { continue; }
 
-        candidates.push((eid,arms,constructor));
+        candidates.push((eid,arms,constructor,scrutinee));
       }
 
-      for (eid, arms, constructor) in candidates {
+      for (eid, arms, constructor, scrutinee) in candidates {
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
           if let Pattern::App(f, _) = pattern { if f != constructor { continue; } }
 
@@ -259,6 +259,9 @@ impl Prover<'_> {
           let pattern: Pattern = pattern.subst(&subst);
           let expr = expr.subst(&subst.into_iter().map(|(v0,v1)| (v0, Expr::Var(v1))).collect());
 
+          let hyp = self.fresh_hyp();
+          let pat = self.egraph.add_expr(&pattern.as_expr(), v);
+          self.egraph.union(scrutinee, pat, v, ProofEdge::Hyp(hyp, true));
           let e = self.egraph.add_expr(&expr, v);
           self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(arm_i, true));
 
@@ -295,7 +298,7 @@ impl Prover<'_> {
       }
 
       if let Some((eid, scrutinee, arms)) = candidates.into_iter().min_by_key(|(e,_,_)| *e) {
-        println!("Case analysis on {} at v{}", eid.0, v);
+        // println!("Case analysis on {} at v{}", eid.0, v);
         self.mark_expanded[v].insert(eid);
 
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
