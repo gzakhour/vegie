@@ -295,7 +295,7 @@ impl Prover<'_> {
       }
 
       if let Some((eid, scrutinee, arms)) = candidates.into_iter().min_by_key(|(e,_,_)| *e) {
-        // println!("Case analysis on {} at v{}", eid.0, v);
+        println!("Case analysis on {} at v{}", eid.0, v);
         self.mark_expanded[v].insert(eid);
 
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {

@@ -97,6 +97,13 @@ impl VTree {
     result
   }}}
 
+  pub fn is_ancestor(&self, earlier: Version, later: Version) -> bool {
+    if earlier == later { return true; }
+    if later == ROOT_VERSION { return false; }
+    if earlier == self.parent[later] { return true; }
+    self.is_ancestor(earlier, self.parent[later])
+  }
+
   pub fn dump(&self) {
     for v in self.all_versions() {
       println!("{v}: {:?}", self.children[v]);
@@ -586,7 +593,7 @@ impl ENode {
 impl VEGraph {
 
   pub fn visualise_proof_graph(&self, ctx: &Ctx, source: ENodeId) {{{
-    let costs = self.edge_costs(source);
+    // let costs = self.edge_costs(source);
     eprintln!("digraph G {{");
     for (eid, _) in &self.proof_graph {
       eprintln!("n{} [label=\"n{}: {}\"];",
