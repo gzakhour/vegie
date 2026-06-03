@@ -97,6 +97,12 @@ impl VTree {
     result
   }}}
 
+  pub fn dump(&self) {
+    for v in self.all_versions() {
+      println!("{v}: {:?}", self.children[v]);
+    }
+  }
+
 }
 
 
@@ -163,6 +169,7 @@ pub enum ProofEdge {
   Absurd(ENodeId, ENodeId),
   Hyp(IdentId, bool),
   CaseReduct(IdentId, usize, bool),
+  CaseSimpl(usize, bool),
 }
 
 impl ProofEdge {
@@ -176,6 +183,7 @@ impl ProofEdge {
       Absurd(a, b) => Absurd(*b, *a),
       Hyp(h, c) => Hyp(*h, !c),
       CaseReduct(id, n, b) => CaseReduct(*id, *n, !b),
+      CaseSimpl(n, b) => CaseSimpl(*n, !b),
     }
   }//}}}
 }
@@ -326,7 +334,6 @@ impl VEGraph {
     }
 
     self.vuf.union(child, parent, v);
-
 
     for parent in 0 .. self.parents[Id::as_usize(&child)].len() {
       let parent = self.parents[Id::as_usize(&child)][parent];
@@ -492,6 +499,7 @@ fn vegraph() {//{{{
 
 
 
+#[derive(Debug)]
 pub enum StructuralOrd {
   UNKNOWN, EQ, LE
 }
@@ -513,27 +521,36 @@ impl VEGraph {
   }//}}}
 
   pub fn structurally_less(&self, type_info: &BTreeMap<IdentId, TypeInfo>, big: ENodeId, small: ENodeId, v: Version) -> StructuralOrd {//{{{
-    use StructuralOrd::*;
-    let big = self.query(big, v);
-    let small = self.query(small, v);
 
-    if big == small { return EQ }
+    fn aux(g: &VEGraph, seen: &mut BTreeSet<ENodeId>, type_info: &BTreeMap<IdentId, TypeInfo>, big: ENodeId, small: ENodeId, v: Version) -> StructuralOrd {
 
-    // TODO BUG! enodes_per_eclass contains an enode that app_enodes does not!
-    for enode in &self.enodes_per_eclass[v][&self.query(big, v)] {
-      let ENode::App(func, args) = self.hashcons.get(enode) else { continue };
-      if type_info.get(func).map(|tinfo| !tinfo.constructor).unwrap_or(true) { continue }
+      use StructuralOrd::*;
+      let big = g.query(big, v);
+      let small = g.query(small, v);
 
-      for arg in args {
-        if let EQ | LE = self.structurally_less(type_info, *arg, small, v) {
-          return LE;
+      if seen.contains(&big) { return UNKNOWN }
+      seen.insert(big);
+
+      if big == small { return EQ }
+
+      // TODO BUG! enodes_per_eclass contains an enode that app_enodes does not!
+      for enode in &g.enodes_per_eclass[v][&g.query(big, v)] {
+        let ENode::App(func, args) = g.hashcons.get(enode) else { continue };
+        if type_info.get(func).map(|tinfo| !tinfo.constructor).unwrap_or(true) { continue }
+
+        for arg in args {
+          if let EQ | LE = aux(g, seen, type_info, *arg, small, v) {
+            return LE;
+          }
         }
+
+        break;
       }
 
-      break;
+      return UNKNOWN;
     }
 
-    return UNKNOWN;
+    aux(self, &mut BTreeSet::new(), type_info, big, small, v)
   }//}}}
 
   pub fn extract(&self, enode: ENodeId) -> Expr {//{{{
@@ -572,18 +589,13 @@ impl VEGraph {
     let costs = self.edge_costs(source);
     eprintln!("digraph G {{");
     for (eid, _) in &self.proof_graph {
-      eprintln!("n{} [label=\"n{}: {}\\n{}\"];",
+      eprintln!("n{} [label=\"n{}: {}\"];",
         eid.0, eid.0, self.extract(*eid).to_string(ctx),
-        costs.get(eid).unwrap_or(&Default::default()).iter().map(|(v,c)| format!("v={v},cost={},via=({},{})", c.cost, c.prev.0, c.version)).collect::<Vec<_>>().join("; "));
+        // costs.get(eid).unwrap_or(&Default::default()).iter().map(|(v,c)| format!("v={v},cost={},via=({},{})", c.cost, c.prev.0, c.version)).collect::<Vec<_>>().join("; ")
+        );
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
-        use ProofEdge::*;
-        match step {
-          Definition(_,dir) | Rewrite(_, dir, _) | Hyp(_, dir) | CaseReduct(_, _, dir) =>
-            if !dir { continue }
-          _ => {}
-        }
         eprintln!("n{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
       }
     }
@@ -591,34 +603,3 @@ impl VEGraph {
   }}}
 
 }
-
-#[test]
-fn ematching() {//{{{
-  let mut egraph = VEGraph::new();
-
-  let pattern = SearchPattern::App(IdentId(0), vec![ SearchPattern::MetaVar(0), SearchPattern::MetaVar(0) ]);
-
-  egraph.add_expr(&Expr::App(IdentId(0), vec![
-    Expr::App(IdentId(1), vec![
-      Expr::Var(VarId(0))
-    ]),
-    Expr::Var(VarId(1))
-  ]), ROOT_VERSION);
-
-  egraph.add_expr(&Expr::Var(VarId(2)), ROOT_VERSION);
-
-  let v1 = egraph.fork(ROOT_VERSION);
-  let v2 = egraph.fork(v1);
-
-  let x0 = egraph.add_expr(&Expr::Var(VarId(1)), v1);
-  let x1 = egraph.add_expr(&Expr::App(IdentId(1), vec![ Expr::Var(VarId(0)) ]), v1);
-
-  egraph.union(x0, x1, v1);
-  egraph.add_expr(&Expr::App(IdentId(0), vec![ Expr::Var(VarId(2)), Expr::Var(VarId(2)) ]), v1);
-
-  egraph.add_expr(&Expr::App(IdentId(0), vec![ Expr::Var(VarId(3)), Expr::Var(VarId(3)) ]), v2);
-
-  assert_eq!(egraph.search_all(&pattern, ROOT_VERSION).count(), 0);
-  assert_eq!(egraph.search_all(&pattern, v1).count(), 2);
-  assert_eq!(egraph.search_all(&pattern, v2).count(), 3);
-}//}}}

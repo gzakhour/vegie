@@ -92,6 +92,8 @@ impl VEGraph {
             Proof::Rewrite(*thm, *dir, bindings.iter().map(|(v,e)| (*v, self.extract(*e))).collect()),
           ProofEdge::CaseReduct(e, branch, dir) =>
             Proof::CaseReduct(*e, *branch, *dir),
+          ProofEdge::CaseSimpl(branch, dir) =>
+            Proof::CaseSimpl(*branch, *dir),
           ProofEdge::Congr => {
             match self.hashcons.get(&new_dest).clone() {
               ENode::App(f1, args1) => {

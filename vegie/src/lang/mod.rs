@@ -1,4 +1,4 @@
-// #![allow(warnings)] // *touch face*
+#![allow(warnings)] // *touch face*
 
 pub mod ast;
 pub mod tokenizer;

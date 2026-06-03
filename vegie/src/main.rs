@@ -48,6 +48,7 @@ fn main() {
           prover.proof_iter();
           prover.proof_iter();
           prover.proof_iter();
+          prover.proof_iter();
           // prover.dump(&format!("/tmp/proof-{theorem_name}.log"));
 
           let (code, state) =
@@ -55,11 +56,12 @@ fn main() {
             else if prover.is_false() { (31, "false") }
             else { (33, "unknown") };
           println!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
-          if code == 32 {
-            // println!("=== DEBUG ===");
-            // println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
-            // prover.egraph.visualise_proof_graph(&prover.ctx, prover.lhs);
 
+          // println!("=== DEBUG ===");
+          // println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
+          // prover.egraph.visualise_proof_graph(&prover.ctx, prover.lhs);
+
+          if code == 32 {
             println!("{}", prover.explain());
             parser.ctx.proven_theorem.insert(name);
           }

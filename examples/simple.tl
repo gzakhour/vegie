@@ -24,6 +24,10 @@
   (even (succ (succ ?x)))
   (even ?x))
 
+(theorem even_succ_odd ((?x nat))
+  (even (succ ?x))
+  (not (even ?x)))
+
 
 (type one () nat)
 (def one () (succ zero))

@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 
 use crate::lang::ast::{TheoremId, TypeId, VarId, IdentId};
-use crate::lang::ast::{Constructor, Expr};
+use crate::lang::ast::{Constructor, Pattern, Expr};
 use crate::lang::ctx::{Ctx};
 use crate::lang::myegraph::{ROOT_VERSION, Version, VEGraph, ENodeId, ENode, StructuralOrd, ProofEdge};
 use crate::lang::ematch::{SearchPattern};
@@ -81,7 +81,7 @@ impl Prover<'_> {
     if self.is_done() { return; }
     // let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
     for v in 0 .. self.egraph.vuf.tree.parent.len() { // TODO should this be leaves?
-      for _ in 0 .. 6 {
+      for _ in 0 .. 10 {
         // println!("> constructors_non_overlap");
         self.constructors_non_overlap(v);
         // println!("> constructors_injectivite");
@@ -93,6 +93,9 @@ impl Prover<'_> {
       }
       // println!("> expand_defs");
       self.expand_defs(v);
+      if self.is_done() { return; }
+      // println!("> case simpl");
+      self.case_simpl(v);
       if self.is_done() { return; }
       // println!("> case_analysis");
       self.case_analysis(v);
@@ -222,11 +225,56 @@ impl Prover<'_> {
     }
   }//}}}
 
+  fn case_simpl(&mut self, v: Version) {
+
+    'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter() {
+
+      // skip if eclass has value
+      // TODO should probably cache this
+      for (f, _) in &self.egraph.app_enodes[v][&eclass] {
+        if self.ctx.type_info[&f].constructor {
+          continue 'eclass_search
+        }
+      }
+
+      let mut candidates = vec![];
+
+      for i in 0 .. self.egraph.case_enodes[v][&eclass].len() {
+        let eid = self.egraph.case_enodes[v][&eclass][i];
+        if self.mark_expanded[v].contains(&eid) { continue 'eclass_search; }
+        let ENode::Case(scrutinee, arms) = self.egraph.hashcons.get(&eid).clone() else { continue };
+        let ENode::App(constructor, _) = self.egraph.hashcons.get(&scrutinee).clone() else { continue };
+        if !self.ctx.type_info[&constructor].constructor { continue; }
+
+        candidates.push((eid,arms,constructor));
+      }
+
+      for (eid, arms, constructor) in candidates {
+        for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
+          if let Pattern::App(f, _) = pattern { if f != constructor { continue; } }
+
+          // freshen up pattern and expr
+          let vars = pattern.get_vars();
+          let subst: BTreeMap<VarId, VarId> = vars.into_iter().map(|v| (v, self.ctx.vars.mk_fresh())).collect();
+          let pattern: Pattern = pattern.subst(&subst);
+          let expr = expr.subst(&subst.into_iter().map(|(v0,v1)| (v0, Expr::Var(v1))).collect());
+
+          let e = self.egraph.add_expr(&expr, v);
+          self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(arm_i, true));
+
+          break;
+        }
+      }
+
+    }
+
+  }
+
   fn case_analysis(&mut self, v: Version) -> bool {//{{{
     // we only do case analysis on leaf nodes
     if !self.leaf_versions.contains(&v) { return false; }
 
-    'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter().rev() {
+    'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter() {
 
       // skip if eclass has value
       // TODO should probably cache this
@@ -247,13 +295,14 @@ impl Prover<'_> {
       }
 
       if let Some((eid, scrutinee, arms)) = candidates.into_iter().min_by_key(|(e,_,_)| *e) {
+        // println!("Case analysis on {} at v{}", eid.0, v);
         self.mark_expanded[v].insert(eid);
 
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
           // freshen up pattern and expr
           let vars = pattern.get_vars();
           let subst: BTreeMap<VarId, VarId> = vars.into_iter().map(|v| (v, self.ctx.vars.mk_fresh())).collect();
-          let pattern: crate::lang::ast::Pattern = pattern.subst(&subst);
+          let pattern: Pattern = pattern.subst(&subst);
           let expr = expr.subst(&subst.into_iter().map(|(v0,v1)| (v0, Expr::Var(v1))).collect());
 
           let hyp = self.fresh_hyp();
@@ -271,19 +320,6 @@ impl Prover<'_> {
         return true;
       }
 
-    }
-
-    if let Some((var, typ)) = self.case_vars[v].pop() {
-      for Constructor { name, args } in &self.ctx.datatypes[&typ].clone() {
-        let hyp = self.fresh_hyp();
-        let v = self.fork(v, hyp);
-        let var = self.egraph.add_expr(&Expr::Var(var), v);
-        let pat = self.egraph.add_expr(&Expr::Cons(*name,
-          (0 .. args.len()).map(|_| Expr::Var(self.ctx.vars.mk_fresh())).collect()), v);
-        self.egraph.set_hyp_eq(hyp, var, pat);
-        self.egraph.union(var, pat, v, ProofEdge::Hyp(hyp, true));
-      }
-      return true;
     }
 
     return false;

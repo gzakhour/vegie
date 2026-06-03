@@ -179,7 +179,8 @@ pub enum Proof {
   Injective(u8, Expr, Expr, Box<Proof>),
   Absurd(Expr, Expr, Box<Proof>),
   Cases(Vec<(IdentId, Expr, Expr, Proof)>),
-  CaseReduct(IdentId, usize, bool),
+  CaseReduct(IdentId, usize, bool), // use a hyp
+  CaseSimpl(usize, bool), // use the fact that scrutinee is obv a construction
   Hyp(IdentId, bool),
   Seq(Vec<Proof>),
 }
@@ -206,7 +207,7 @@ impl Proof {
       Cases(arms) => {
         let mut result = format!("(cases");
         for (hyp, e1, e2, p) in arms {
-          result.push_str(&format!("\n{indent}  ({} ({} {})\n{})",
+          result.push_str(&format!("\n{indent}  (let ({} {} {})\n{})",
             ctx.idents.as_str(hyp),
             e1.to_string(ctx),
             e2.to_string(ctx),
@@ -231,6 +232,9 @@ impl Proof {
       },
       CaseReduct(hyp, arm, dir) => {
         format!("(case-reduce {}{} {arm})", if *dir { "" } else { "<- " }, ctx.idents.as_str(hyp))
+      },
+      CaseSimpl(arm, dir) => {
+        format!("(case-simpl {}{arm})", if *dir { "" } else { "<- " })
       },
       Hyp(ident, dir) => {
         format!("(hyp {}{})", if *dir { "" } else { "<- " }, ctx.idents.as_str(ident))
