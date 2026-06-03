@@ -75,14 +75,6 @@ impl VTree {
     return new;
   }//}}}
 
-  pub fn is_ancestor(&self, v0: Version, mut v1: Version) -> bool {//{{{
-    loop {
-      if v1 == v0 { return true; }
-      if v1 == ROOT_VERSION { return false; }
-      v1 = self.parent[v1];
-    }
-  }//}}}
-
   pub fn all_between(&self, v0: Version, mut v1: Version) -> Vec<Version> {//{{{
     let mut result = vec![];
     loop {
@@ -93,12 +85,8 @@ impl VTree {
     }
   }//}}}
 
-  pub fn distance(&self, v0: Version, v1: Version) -> usize {//{{{
-    self.all_between(v0, v1).len() - 1
-  }//}}}
-
   pub fn all_versions(&self) -> impl Iterator<Item=Version> {{{
-    (0 .. self.parent.len())
+    0 .. self.parent.len()
   }}}
 
   pub fn all_descendents(&self, v: Version) -> Vec<Version> {{{

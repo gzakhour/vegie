@@ -185,28 +185,35 @@ pub enum Proof {
 }
 
 impl Proof {
-  pub fn to_string(&self, ctx: &Ctx) -> String {//{{{
+  pub fn to_string(&self, ctx: &Ctx, lvl: usize) -> String {//{{{
+    let indent = "  ".repeat(lvl);
     use Proof::*;
-    match self {
+    let result = match self {
       Refl => "refl".to_string(),
       Definition(ident, b) => format!("({} {})", if *b { "unfold" } else { "fold" }, ctx.idents.as_str(ident)),
       Congr(f, args) => {
         let mut result = format!("(congr {}", ctx.idents.as_str(f));
-        for a in args { result.push_str(&format!(" {}", a.to_string(ctx))); }
+        for a in args {
+          result.push_str(&format!("\n{}", a.to_string(ctx, lvl+1)));
+        }
         result.push(')');
-        return result
+        result
       },
       Injective(n, e1, e2, p) =>
-        format!("(injectivity {n} {} {} {})", e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx)),
+        format!("(injectivity {n} {} {}\n{})", e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx, lvl+1)),
       Absurd(e1, e2, p) =>
-        format!("(absurd {} {} {})",  e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx)),
+        format!("(absurd {} {}\n{})",  e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx, lvl+1)),
       Cases(arms) => {
         let mut result = format!("(cases");
         for (hyp, e1, e2, p) in arms {
-          result.push_str(&format!(" ({} ({} {}) {})", ctx.idents.as_str(hyp), e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx)));
+          result.push_str(&format!("\n{indent}  ({} ({} {})\n{})",
+            ctx.idents.as_str(hyp),
+            e1.to_string(ctx),
+            e2.to_string(ctx),
+            p.to_string(ctx, lvl+2)));
         }
         result.push(')');
-        return result
+        result
       },
       Rewrite(theorem, dir, bindings) => {
         let mut result = format!("(apply {}{}", if *dir { "" } else { "<- " }, ctx.theorems.as_str(theorem));
@@ -214,13 +221,13 @@ impl Proof {
           result.push_str(&format!(" {}", bindings[&(i as u8)].to_string(ctx)));
         }
         result.push(')');
-        return result
+        result
       },
       Seq(steps) => {
         let mut result = format!("(seq");
-        for s in steps { result.push_str(&format!(" {}", s.to_string(ctx))); }
+        for s in steps { result.push_str(&format!("\n{}", s.to_string(ctx, lvl+1))); }
         result.push(')');
-        return result
+        result
       },
       CaseReduct(hyp, arm, dir) => {
         format!("(case-reduce {}{} {arm})", if *dir { "" } else { "<- " }, ctx.idents.as_str(hyp))
@@ -229,8 +236,9 @@ impl Proof {
         format!("(hyp {}{})", if *dir { "" } else { "<- " }, ctx.idents.as_str(ident))
       },
       CongrScrutinee(p) => {
-        format!("(congr-scrutinee {})", p.to_string(ctx))
+        format!("(congr-scrutinee\n{})", p.to_string(ctx, lvl+1))
       }
-    }
+    };
+    format!("{indent}{result}")
   }//}}}
 }
