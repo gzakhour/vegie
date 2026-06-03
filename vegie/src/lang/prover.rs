@@ -146,7 +146,7 @@ impl Prover<'_> {
   }//}}}
 
   pub fn explain(&mut self) -> String {
-    self.egraph.explain(self.lhs, self.rhs, ROOT_VERSION).to_string(&self.ctx)
+    self.egraph.explain(self.lhs, self.rhs, ROOT_VERSION).to_string(&self.ctx, 0)
   }
 
 }
@@ -308,19 +308,16 @@ impl Prover<'_> {
               StructuralOrd::EQ => {}
             }
           }
-          if all_eq {
-            continue 'search_result;
-          } else {
-          }
+          if all_eq { continue 'search_result; }
         }
 
-        println!("========= MATCH {}: enode={}, lhs={}, extracted={}, bindings={:?}",
-          self.ctx.theorems.as_str(lemma_id),
-          enode.0,
-          lhs.to_string(self.ctx),
-          self.egraph.extract(enode).to_string(self.ctx),
-          bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
-        );
+        // println!("========= MATCH {}: enode={}, lhs={}, extracted={}, bindings={:?}",
+        //   self.ctx.theorems.as_str(lemma_id),
+        //   enode.0,
+        //   lhs.to_string(self.ctx),
+        //   self.egraph.extract(enode).to_string(self.ctx),
+        //   bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
+        // );
 
         let id = self.egraph.add_pattern(rhs, &bindings, v);
 

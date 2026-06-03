@@ -27,7 +27,22 @@
   (add ?x (double ?y))
   (add ?y (add ?x ?y)))
 
-
 (theorem binomial ((?x nat) (?y nat))
   (square (add ?x ?y))
   (add (square ?x) (add (double (mult ?x ?y)) (square ?y))))
+
+(def add (?a ?b) (case ?a
+  (zero ?b)
+  ((succ ?a) (succ (add ?a ?b)))))
+
+(theorem 0+0=0 () (add zero zero) zero)
+
+(theorem add_zero_x' ((?x nat)) (add (add zero zero) ?x) ?x)
+
+(theorem add_zero_x ((?x nat)) (add zero ?x) ?x)
+
+; (cases
+;   (_h0 ((zero) (zero))
+;     (case-reduce _h0 0))
+;   (_h1 ((zero) (succ __?1))
+;     (absurd (zero) (succ __?1) (hyp _h1))))

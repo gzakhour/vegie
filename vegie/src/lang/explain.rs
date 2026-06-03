@@ -16,115 +16,8 @@ pub struct ExplainCost {
 
 impl VEGraph {
 
-  pub fn explain(&mut self, src: ENodeId, dest: ENodeId, v: Version) -> Proof {{{
-    if src == dest { return Proof::Refl; }
 
-    use std::collections::{BinaryHeap};
-
-    let mut found = false;
-    let mut prev = BTreeMap::new();
-
-    {
-      use std::cmp::{Ordering};
-      #[derive(Eq,PartialEq)]
-      struct Node { node: ENodeId, cost: usize }
-      impl Ord for Node { fn cmp(&self, other: &Self) -> Ordering { other.cost.cmp(&self.cost) } }
-      impl PartialOrd for Node { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(&other)) } }
-
-      let mut dist = BTreeMap::new();
-      let mut queue = BinaryHeap::new();
-      // let mut visited = BTreeSet::new();
-
-      queue.push(Node { node: src.clone(), cost: 0 });
-      dist.insert(src.clone(), 0);
-
-      while let Some(Node { node, cost }) = queue.pop() {
-        // if node == dest { found = true; break; }
-        // if visited.contains(&node) { continue; }
-        // visited.insert(node);
-
-        'edge_search: for (ve, step, next) in &self.proof_graph[&node] {
-          // if visited.contains(next) { continue; }
-          let cost: usize = cost +
-            if v == *ve { 1 }
-            else if self.vuf.tree.is_ancestor(*ve, v) { 2 }
-            else if self.vuf.tree.is_ancestor(v, *ve) {
-              let dist = self.vuf.tree.distance(v, *ve);
-              for vc in self.vuf.tree.all_between(v, *ve) {
-                // check that the equality also holds at all versions in between
-                // i.e. don't consider an edge at a subversion if there won't be a path at other subversions
-                if !self.equal(node, *next, vc) { continue 'edge_search; }
-              }
-              15 << dist
-            } else { continue };
-          if cost < *dist.get(next).unwrap_or(&usize::MAX) {
-            queue.push(Node { node: *next, cost });
-            prev.insert(next.clone(), (*ve, step.clone(), node));
-            dist.insert(*next, cost);
-          }
-        }
-
-      }
-    }
-
-    // if !found { panic!("The proof does not contain all the required edges to show the equality!") }
-
-    let mut path: Vec<Proof> = vec![];
-    let mut node = dest.clone();
-    while node != src {
-      let (ve, step, prev) = prev[&node].clone();
-      // println!("==== {v}: GOING BACK FROM {} to {} using edge at version {ve}", node.0, prev.0);
-      path.push(if self.vuf.tree.is_ancestor(ve, v) {
-        match step.clone() {
-          ProofEdge::Definition(ident, dir) =>
-            Proof::Definition(ident, dir),
-          ProofEdge::Rewrite(id, dir, bindings) =>
-            Proof::Rewrite(id, dir, bindings.into_iter().map(|(k,e)| (k, self.extract(e))).collect()),
-          ProofEdge::Injective(i, a, b) =>
-            Proof::Injective(i, self.extract(a), self.extract(b), Box::new(self.explain(a, b, v))),
-          ProofEdge::Absurd(a, b) =>
-            Proof::Absurd(self.extract(a), self.extract(b), Box::new(self.explain(a, b, v))),
-          ProofEdge::CaseReduct(id, i, dir) => Proof::CaseReduct(id, i, dir),
-          ProofEdge::Hyp(id, dir) => Proof::Hyp(id, dir),
-          ProofEdge::Congr => {
-            match self.hashcons.get(&prev).clone() {
-              ENode::App(f1, args1) => {
-                let ENode::App(f2, args2) = self.hashcons.get(&node).clone() else { panic!() };
-                assert_eq!(f1, f2);
-                assert_eq!(args1.len(), args2.len());
-                Proof::Congr(f1, args1.into_iter().zip(args2).map(|(a1,a2)| self.explain(a1, a2, v)).collect())
-              },
-              ENode::Case(scrutinee1, _) => {
-                let ENode::Case(scrutinee2, _) = self.hashcons.get(&node).clone() else { panic!() };
-                Proof::CongrScrutinee(Box::new(self.explain(scrutinee1, scrutinee2, v)))
-              },
-              _ => unreachable!()
-            }
-          }
-        }
-      } else if self.vuf.tree.is_ancestor(v, ve) {
-        let children = self.vuf.tree.children[v].clone();
-        Proof::Cases(children.into_iter().map(|vc| {
-          let hyp = self.version_hyp[vc];
-          let (e1, e2) = self.hyp_eq[&hyp];
-          assert!(self.equal(prev, node, vc));
-          (hyp, self.extract(e1), self.extract(e2), self.explain(prev, node, vc))
-        }).collect())
-      } else {
-        unreachable!()
-      });
-      node = prev;
-    }
-
-    path.reverse();
-
-    if path.len() == 1 { path.pop().unwrap() }
-    else { Proof::Seq(path) }
-  }}}
-
-
-  pub fn edge_costs(&self, source: ENodeId) -> BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> {
-
+  pub fn edge_costs(&self, source: ENodeId) -> BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> {{{
     let mut result: BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> = BTreeMap::new();
 
     result.insert(source, self.vuf.tree.all_versions().map(|v| (v, ExplainCost {
@@ -163,7 +56,7 @@ impl VEGraph {
             entry.prev = node;
             entry.version = *v;
             entry.proof = proof.clone();
-            visited.remove(next);
+            visited.remove(next); // TODO is there a better way?
           }
         }
 
@@ -172,8 +65,74 @@ impl VEGraph {
     }
 
     result
+  }}}
 
-  }
+
+  // TODO:
+  //   1. do not make it so recursive
+  //   2. do not recompute the edge costs all the time, especially when `src` does not change (see 1)
+  pub fn explain(&mut self, src: ENodeId, dest: ENodeId, v: Version) -> Proof {{{
+    if src == dest { return Proof::Refl }
+
+    let costs = self.edge_costs(src);
+
+    let c = costs.get(&dest).and_then(|m| m.get(&v)).map(|c| c.cost).unwrap_or(usize::MAX);
+
+    if c < usize::MAX {
+      let ExplainCost { prev: new_dest, proof: step, .. } = &costs[&dest][&v];
+      let step =
+        match step {
+          ProofEdge::Definition(def, dir) => Proof::Definition(*def, *dir),
+          ProofEdge::Absurd(e0, e1) =>
+            Proof::Absurd(self.extract(*e0), self.extract(*e1), self.explain(*e0, *e1, v).into()),
+          ProofEdge::Hyp(h, dir) => Proof::Hyp(*h, *dir),
+          ProofEdge::Injective(arg, e0, e1) =>
+            Proof::Injective(*arg, self.extract(*e0), self.extract(*e1), self.explain(*e0, *e1, v).into()),
+          ProofEdge::Rewrite(thm, dir, bindings) =>
+            Proof::Rewrite(*thm, *dir, bindings.iter().map(|(v,e)| (*v, self.extract(*e))).collect()),
+          ProofEdge::CaseReduct(e, branch, dir) =>
+            Proof::CaseReduct(*e, *branch, *dir),
+          ProofEdge::Congr => {
+            match self.hashcons.get(&new_dest).clone() {
+              ENode::App(f1, args1) => {
+                let ENode::App(f2, args2) = self.hashcons.get(&dest).clone() else { panic!() };
+                assert_eq!(f1, f2);
+                assert_eq!(args1.len(), args2.len());
+                Proof::Congr(f1, args1.into_iter().zip(args2).map(|(a1,a2)| self.explain(a1, a2, v)).collect())
+              },
+              ENode::Case(scrutinee1, _) => {
+                let ENode::Case(scrutinee2, _) = self.hashcons.get(&dest).clone() else { panic!() };
+                Proof::CongrScrutinee(Box::new(self.explain(scrutinee1, scrutinee2, v)))
+              },
+              _ => unreachable!()
+            }
+          }
+        };
+
+      let rest = self.explain(src, *new_dest, v);
+
+      match rest {
+        Proof::Seq(mut seq) => {
+          seq.push(step);
+          Proof::Seq(seq)
+        },
+        Proof::Refl => step,
+        rest => Proof::Seq(vec![ rest, step ]),
+      }
+
+    } else {
+      let v_children = self.vuf.tree.children[v].clone();
+      if v_children.len() == 0 { panic!("There's no way to prove this"); }
+      Proof::Cases(
+        v_children.into_iter().map(|v| {
+          let hyp = self.version_hyp[v];
+          let (lhs_hyp, rhs_hyp) = self.hyp_eq[&hyp].clone();
+          (hyp, self.extract(lhs_hyp), self.extract(rhs_hyp), self.explain(src, dest, v))
+        }).collect()
+      )
+    }
+
+  }}}
 
 
 }
