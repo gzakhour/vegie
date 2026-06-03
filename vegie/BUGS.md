@@ -12,3 +12,5 @@
 ```
 
 * `add_comm` is not proven correct anymore...
+
+* `and_comm` may fail without the high congr/inj/abs costs manually added

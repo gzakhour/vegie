@@ -46,7 +46,10 @@ impl VEGraph {
                                .unwrap_or(usize::MAX);
 
           if c == usize::MAX { continue; }
-          let new_cost = c + 1;
+          let new_cost = c + match proof {
+            ProofEdge::Congr | ProofEdge::Absurd(_,_) | ProofEdge::Injective(_,_,_) => 100,
+            _ => 1
+          };
 
           if result[&next].get(&vc).map(|c| c.cost).unwrap_or(usize::MAX) > new_cost {
             let entry = result.get_mut(&next).unwrap().entry(vc).or_insert(ExplainCost {
