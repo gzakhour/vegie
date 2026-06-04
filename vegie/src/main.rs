@@ -47,7 +47,7 @@ fn main() {
           prover.proof_iter();
           prover.proof_iter();
           prover.proof_iter();
-          // prover.proof_iter();
+          prover.proof_iter();
           // prover.proof_iter();
           // prover.dump(&format!("/tmp/proof-{theorem_name}.log"));
 
@@ -59,7 +59,7 @@ fn main() {
 
           println!("=== DEBUG ===");
           println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
-          prover.egraph.visualise_proof_graph(&prover.ctx, prover.lhs);
+          prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs);
 
           if code == 32 {
             println!("{}", prover.explain());

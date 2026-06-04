@@ -75,6 +75,9 @@ impl VEGraph {
   //   1. do not make it so recursive
   //   2. do not recompute the edge costs all the time, especially when `src` does not change (see 1)
   pub fn explain(&mut self, src: ENodeId, dest: ENodeId, v: Version) -> Proof {{{
+
+    println!("Explain {} = {} at v{v}", src.0, dest.0);
+
     if src == dest { return Proof::Refl }
 
     let costs = self.edge_costs(src);

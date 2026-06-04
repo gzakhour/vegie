@@ -276,12 +276,18 @@ impl VEGraph {
         }
       }
     }
+    self.proof_graph.entry(id).or_insert(BTreeSet::new());
     self.enodes_per_versions[v].insert(id);
     let class = self.find(id, v);
     if let Some(enodes) = self.enodes_per_eclass[v].get_mut(&class) {
       enodes.push(id);
     } else {
       self.enodes_per_eclass[v].insert(class, vec![ id ]);
+    }
+    let canon = self.canonicalize(enode.clone(), v);
+    if canon != enode {
+      let canon_id = self.add_enode(canon, v);
+      self.union(id, canon_id, v, ProofEdge::Congr);
     }
     id
   }//}}}
@@ -296,10 +302,7 @@ impl VEGraph {
         ENode::Case(scrut_id, arms.clone())
       },
     };
-    let canon = self.canonicalize(enode.clone(), v);
-    let canon_id = self.add_enode(canon, v);
     let id = self.add_enode(enode, v);
-    self.union(id, canon_id, v, ProofEdge::Congr);
     return id;
   }//}}}
 
@@ -311,8 +314,8 @@ impl VEGraph {
 
   pub fn union(&mut self, e1: ENodeId, e2: ENodeId, v: Version, proof: ProofEdge) -> ENodeId {//{{{
     if e1 != e2 {
-      self.proof_graph.entry(e1).or_insert(BTreeSet::new()).insert((v, proof.clone(), e2));
-      self.proof_graph.entry(e2).or_insert(BTreeSet::new()).insert((v, proof.inverse(), e1));
+      self.proof_graph.get_mut(&e1).unwrap().insert((v, proof.clone(), e2));
+      self.proof_graph.get_mut(&e2).unwrap().insert((v, proof.inverse(), e1));
     }
 
     let e1p = self.find(e1, v);
@@ -592,9 +595,9 @@ impl ENode {
 
 impl VEGraph {
 
-  pub fn visualise_proof_graph(&self, ctx: &Ctx, source: ENodeId) {{{
+  pub fn visualise_proof_graph(&self, id: usize, ctx: &Ctx, source: ENodeId) {{{
     // let costs = self.edge_costs(source);
-    eprintln!("digraph G {{");
+    eprintln!("digraph G_{id} {{");
     for (eid, _) in &self.proof_graph {
       eprintln!("n{} [label=\"n{}: {}\"];",
         eid.0, eid.0, self.extract(*eid).to_string(ctx),
@@ -603,6 +606,7 @@ impl VEGraph {
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
+        if *v != 6 && *v != 5 && *v != 2 && *v != 0 { continue }
         eprintln!("n{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
       }
     }

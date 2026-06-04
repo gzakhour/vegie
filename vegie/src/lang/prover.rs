@@ -81,7 +81,7 @@ impl Prover<'_> {
     if self.is_done() { return; }
     // let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
     for v in 0 .. self.egraph.vuf.tree.parent.len() { // TODO should this be leaves?
-      for _ in 0 .. 10 {
+      for _ in 0 .. 2 {
         // println!("> constructors_non_overlap");
         self.constructors_non_overlap(v);
         // println!("> constructors_injectivite");
@@ -187,7 +187,7 @@ impl Prover<'_> {
         for eclass in self.egraph.all_eclasses(v) {
           let Some(set) = &self.egraph.app_enodes[v][&eclass].get(&name) else { continue };
           for i in 0 .. set.len() { for j in 0 .. set.len() {
-            if i == j { continue; }
+            if i == j || set[i] == set[j] { continue; }
             let ENode::App(f1, args1) = self.egraph.hashcons.get(&set[i]) else { continue };
             let ENode::App(f2, args2) = self.egraph.hashcons.get(&set[j]) else { continue };
             if !self.ctx.type_info[f1].constructor { continue };
@@ -200,6 +200,7 @@ impl Prover<'_> {
       }
     }
     for (a, b, i, e1, e2) in new_eqs {
+      if e1 == e2 { continue; }
       self.egraph.union(a, b, v, ProofEdge::Injective(i as u8, e1, e2));
     }
   }//}}}
@@ -225,7 +226,7 @@ impl Prover<'_> {
     }
   }//}}}
 
-  fn case_simpl(&mut self, v: Version) {
+  fn case_simpl(&mut self, v: Version) {//{{{
 
     'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter() {
 
@@ -271,7 +272,7 @@ impl Prover<'_> {
 
     }
 
-  }
+  }//}}}
 
   fn case_analysis(&mut self, v: Version) -> bool {//{{{
     // we only do case analysis on leaf nodes
@@ -298,6 +299,7 @@ impl Prover<'_> {
       }
 
       if let Some((eid, scrutinee, arms)) = candidates.into_iter().min_by_key(|(e,_,_)| *e) {
+        // if eid.0 != 4 && eid.0 != 5 { continue; }
         // println!("Case analysis on {} at v{}", eid.0, v);
         self.mark_expanded[v].insert(eid);
 
@@ -317,6 +319,10 @@ impl Prover<'_> {
           let e = self.egraph.add_expr(&expr, v);
           self.egraph.set_hyp_eq(hyp, scrutinee, pat);
           self.egraph.union(eid, e, v, ProofEdge::CaseReduct(hyp, arm_i, true));
+
+          // print!("  v{v}: hyp: {hyp:?}");
+          // println!(": {} = {}", self.egraph.extract(scrutinee).to_string(&self.ctx),
+          //                       self.egraph.extract(pat).to_string(&self.ctx));
         }
 
         self.remove_version(v);
@@ -330,35 +336,46 @@ impl Prover<'_> {
 
   fn apply_theorems(&mut self, v: Version) {//{{{
     for (lemma_id, dir, lhs, rhs) in self.rules.iter().rev() { // search backwards is really better
-      // println!("Searching for {} while proving {} (lhs={})", self.ctx.theorems.as_str(lemma_id), self.ctx.theorems.as_str(&self.theorem), lhs.to_string(self.ctx));
-      let search_results = self.egraph.search_all(lhs, v, 20).collect::<Vec<_>>();
-      'search_result: for (enode, bindings) in search_results {
+
+      // println!("v{v} searching for {} while proving {} (lhs={})",
+      //   self.ctx.theorems.as_str(lemma_id),
+      //   self.ctx.theorems.as_str(&self.theorem),
+      //   lhs.to_string(self.ctx));
+
+      let search_results = self.egraph.search_all(lhs, v, 20);
+      'search_result: for bindings in search_results {
+
+        let enode = self.egraph.add_pattern(lhs, &bindings, v);
 
         // we must check decreasing measure here
         if *lemma_id == self.theorem {
           if bindings.len() != self.arg_eclasses.len() { continue; }
-          let mut all_eq = true;
-          for i in 0 .. self.arg_eclasses.len() {
-            let e = self.arg_eclasses[i];
-            let bi = bindings[&(i as u8)];
-            match self.egraph.structurally_less(&self.ctx.type_info, e, bi, v) {
-              StructuralOrd::LE => { all_eq = false; break; }
-              StructuralOrd::UNKNOWN => { continue 'search_result; }
-              StructuralOrd::EQ => {}
-            }
-          }
-          if all_eq { continue 'search_result; }
+          if bindings.values().collect::<BTreeSet<_>>() == self.arg_eclasses.iter().collect::<BTreeSet<_>>() { continue 'search_result }
+          // let mut all_eq = true;
+          // // TODO: comparing against arg_eclasses is not the right way!
+          // for i in 0 .. self.arg_eclasses.len() {
+          //   let e = self.arg_eclasses[i];
+          //   let bi = bindings[&(i as u8)];
+          //   match self.egraph.structurally_less(&self.ctx.type_info, e, bi, v) {
+          //     StructuralOrd::LE => { all_eq = false; break; }
+          //     StructuralOrd::UNKNOWN => { continue 'search_result; }
+          //     StructuralOrd::EQ => {}
+          //   }
+          // }
+          // if all_eq { continue 'search_result; }
         }
 
-        // println!("========= MATCH {}: enode={}, lhs={}, extracted={}, bindings={:?}",
+        let id = self.egraph.add_pattern(rhs, &bindings, v);
+
+        // println!("========= v{v} MATCH {}: enode={}, lhs={}, rhs={}, lhs_inst={}, rhs_inst={}, bindings={:?}",
         //   self.ctx.theorems.as_str(lemma_id),
         //   enode.0,
         //   lhs.to_string(self.ctx),
+        //   rhs.to_string(self.ctx),
         //   self.egraph.extract(enode).to_string(self.ctx),
+        //   self.egraph.extract(id).to_string(self.ctx),
         //   bindings.iter().map(|(k,v)| (k, self.egraph.extract(*v).to_string(self.ctx))).collect::<BTreeMap<_,_>>()
         // );
-
-        let id = self.egraph.add_pattern(rhs, &bindings, v);
 
         self.egraph.union(enode, id, v, ProofEdge::Rewrite(*lemma_id, *dir, bindings));
         if self.egraph.find(self.lhs,v) == self.egraph.find(self.rhs,v) { return; }
