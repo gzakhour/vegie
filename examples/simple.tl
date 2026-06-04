@@ -24,9 +24,9 @@
   (even (succ (succ ?x)))
   (even ?x))
 
-(theorem even_succ_odd ((?x nat))
-  (even (succ ?x))
-  (not (even ?x)))
+; (theorem even_succ_odd ((?x nat))
+;   (even (succ ?x))
+;   (not (even ?x)))
 
 
 (type one () nat)
@@ -130,7 +130,7 @@
 
 (theorem add_comm_assoc ((?x nat) (?y nat) (?z nat))
   (add ?x (add ?y ?z))
-  (add ?x (add ?y ?z)))
+  (add (add ?x ?z) ?y))
 
 (theorem add_assoc ((?x nat) (?y nat) (?z nat))
   (add (add ?x ?y) ?z)
