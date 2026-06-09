@@ -9,8 +9,10 @@ use crate::lang::prover::{Prover};
 
 fn main() {
 
-  use std::fs::{File};
+  use std::fs::{File, create_dir_all};
   use std::io::{Read, BufReader};
+  use std::path::{Path};
+
   let args = std::env::args().collect::<Vec<String>>();
   if args.len() < 2 {
     eprintln!("Usage: {} file", args[0]);
@@ -23,6 +25,12 @@ fn main() {
   buf_reader.read_to_string(&mut contents).unwrap();
   let contents = contents.chars().collect::<Vec<_>>();
 
+  let proofs_dir = Path::new("proofs");
+  let _ = create_dir_all(proofs_dir).unwrap();
+
+  let dot_dir = Path::new("dot");
+  let _ = create_dir_all(dot_dir).unwrap();
+
   let mut parser = Parser::from(&contents);
   while parser.has_more() {
     match parser.next() {
@@ -32,7 +40,7 @@ fn main() {
           let (line, _) = name.line_col(&contents);
           let name = name.data;
           let axiom_name = parser.ctx.theorems.as_str(&name).to_string();
-          println!("\x1b[33maxiom\x1b[0m:{filename}:{line}: {}: {axiom_name}", name.0);
+          println!("\x1b[33maxiom\x1b[0m:{filename}:{line}: {axiom_name}");
           parser.ctx.proven_theorem.insert(name);
         },
 
@@ -46,8 +54,8 @@ fn main() {
           prover.proof_iter();
           prover.proof_iter();
           prover.proof_iter();
-          prover.proof_iter();
-          prover.proof_iter();
+          // prover.proof_iter();
+          // prover.proof_iter();
           // prover.proof_iter();
           // prover.dump(&format!("/tmp/proof-{theorem_name}.log"));
 
@@ -61,8 +69,11 @@ fn main() {
           // println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
           // prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs);
 
+          use std::fs;
+          let _ = fs::write(dot_dir.join(&theorem_name).with_extension("dot"),
+                            prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs, &prover.lhs, &prover.rhs));
           if code == 32 {
-            println!("{}", prover.explain());
+            let _ = fs::write(proofs_dir.join(&theorem_name), prover.explain());
             parser.ctx.proven_theorem.insert(name);
           }
         },

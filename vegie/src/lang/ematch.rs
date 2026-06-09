@@ -63,7 +63,7 @@ pub type Bindings = BTreeMap<u8, ENodeId>;
 
 impl VEGraph {
 
-  pub fn search(&self, enode: ENodeId, pat: &SearchPattern, v: Version, limit: usize, millis: u64) -> BTreeSet<Bindings> {//{{{
+  pub fn search(&self, enode: ENodeId, pat: &SearchPattern, v: Version, limit: usize) -> BTreeSet<Bindings> {//{{{
 
     fn aux(
       egraph: &VEGraph,
@@ -71,7 +71,6 @@ impl VEGraph {
       pat: &SearchPattern,
       v: Version,
       limit: usize,
-      millis: u64,
       bindings: BTreeSet<Bindings>
     ) -> BTreeSet<Bindings> {
 
@@ -94,6 +93,7 @@ impl VEGraph {
                 }
               }
             })
+            .take(limit)
             .collect()
         }
 
@@ -111,14 +111,15 @@ impl VEGraph {
 
                 let mut result = bindings.clone();
                 for i in 0 .. args.len() {
-                  result = aux(egraph, enode_args[i], &args[i], v, limit, millis, result);
+                  result = aux(egraph, enode_args[i], &args[i], v, limit, result);
                 }
 
                 result
               } else {
                 BTreeSet::new()
               }
-          }).collect()
+          }).take(limit)
+            .collect()
 
         }
 
@@ -126,7 +127,7 @@ impl VEGraph {
 
     }
 
-    aux(self, enode, pat, v, limit, millis, BTreeSet::from([ BTreeMap::new() ]))
+    aux(self, enode, pat, v, limit, BTreeSet::from([ BTreeMap::new() ]))
 
   }//}}}
 
@@ -134,7 +135,9 @@ impl VEGraph {
     // println!("starting search for {pat:?} at v{v}");
     let ans = self.all_eclasses(v)
         .into_iter()
-        .flat_map(move |eclass| self.search(eclass, pat, v, limit, 100))
+        .rev()
+        .flat_map(move |eclass| self.search(eclass, pat, v, limit))
+        .take(limit)
         .collect::<BTreeSet<_>>();
     // println!("  got {} results", ans.len());
     ans

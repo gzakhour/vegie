@@ -1,3 +1,5 @@
+; NOT A BUG ANYMORE: DEFINITION IS USED AND PRESENT IN THE PROOF
+
 (datatype nat zero (succ nat))
 
 (type add (nat nat) nat)

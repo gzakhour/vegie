@@ -107,8 +107,7 @@
 
 (theorem add_comm ((?x nat) (?y nat))
   (add ?x ?y)
-  (add ?y ?x)
-)
+  (add ?y ?x))
 
 (theorem add_assoc_succ0 ((?x nat) (?y nat) (?z nat))
   (add (succ ?x) (add ?y ?z))
@@ -125,16 +124,11 @@
 
 (theorem add_assoc_lemma1 ((?x nat) (?y nat) (?z nat))
   (add (succ ?x) (add ?y ?z))
-  (succ (add ?x (add ?y ?z)))
-)
-
-(theorem add_comm_assoc ((?x nat) (?y nat) (?z nat))
-  (add ?x (add ?y ?z))
-  (add (add ?x ?z) ?y))
+  (succ (add ?x (add ?y ?z))))
 
 (theorem add_assoc ((?x nat) (?y nat) (?z nat))
-  (add (add ?x ?y) ?z)
-  (add ?x (add ?y ?z)))
+  (add ?x (add ?y ?z))
+  (add (add ?x ?y) ?z))
 
 
 
@@ -262,12 +256,9 @@
 (eval (sum_cubes_up_to (succ (succ zero))))
 
 (theorem sum_cubes_up_to1 ((?x nat))
-  (add (cube (succ ?x)) (sum_cubes_up_to ?x))
   (sum_cubes_up_to (succ ?x))
-)
+  (add (cube (succ ?x)) (sum_cubes_up_to ?x)))
 
 (theorem nicomachus ((?x nat))
-  (double (double (sum_cubes_up_to ?x)))
-  (square (sum_up_to ?x)))
-
-
+  (square (sum_up_to ?x))
+  (sum_cubes_up_to ?x))
