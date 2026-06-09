@@ -207,12 +207,12 @@ impl crate::lang::myegraph::ProofEdge {
     use crate::lang::myegraph::ProofEdge::*;
     match self {
       Definition(id, dir) => op(ctx.idents.as_str(id).to_string(), dir),
-      Congr => String::from("congr"),
+      Congr(args) => format!("congr {:?}", args.iter().map(|(a,b)|(a.0,b.0)).collect::<Vec<_>>()),
       Rewrite(id, dir, bindings) => format!("{}", op(ctx.theorems.as_str(id).to_string(), dir)),
       Absurd(e1, e2) => format!("n{}=n{}: ※", e1.0, e2.0),
       Hyp(id, dir) => format!("hyp: {}", op(ctx.idents.as_str(id).to_string(), dir)),
       CaseReduct(id, arm, dir) => format!("case:{} arm={arm}", op(ctx.idents.as_str(id).to_string(), dir)),
-      CaseSimpl(arm, dir) => format!("case-simpl:{dir:?} arm={arm}"),
+      CaseSimpl(hyp, arm, dir) => format!("case-simpl:{dir:?} hyp={hyp:?} arm={arm}"),
       Injective(arg, e1, e2) => format!("n{}=n{}: inj={arg}", e1.0, e2.0),
     }
   }

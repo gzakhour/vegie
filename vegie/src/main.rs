@@ -57,9 +57,9 @@ fn main() {
             else { (33, "unknown") };
           println!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
 
-          println!("=== DEBUG ===");
-          println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
-          prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs);
+          // println!("=== DEBUG ===");
+          // println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
+          // prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs);
 
           if code == 32 {
             println!("{}", prover.explain());

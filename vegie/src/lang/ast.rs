@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use crate::lang::tokenizer::{WithLoc};
 use crate::lang::ctx::{Ctx};
+use crate::lang::myegraph::{VEGraph};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct IdentId(pub usize);
@@ -180,13 +181,13 @@ pub enum Proof {
   Absurd(Expr, Expr, Box<Proof>),
   Cases(Vec<(IdentId, Expr, Expr, Proof)>),
   CaseReduct(IdentId, usize, bool), // use a hyp
-  CaseSimpl(usize, bool), // use the fact that scrutinee is obv a construction
+  CaseSimpl(IdentId, usize, bool), // use the fact that scrutinee is obv a construction
   Hyp(IdentId, bool),
   Seq(Vec<Proof>),
 }
 
 impl Proof {
-  pub fn to_string(&self, ctx: &Ctx, lvl: usize) -> String {//{{{
+  pub fn to_string(&self, egraph: &VEGraph, ctx: &Ctx, lvl: usize) -> String {//{{{
     let indent = "  ".repeat(lvl);
     use Proof::*;
     let result = match self {
@@ -195,15 +196,15 @@ impl Proof {
       Congr(f, args) => {
         let mut result = format!("(congr {}", ctx.idents.as_str(f));
         for a in args {
-          result.push_str(&format!("\n{}", a.to_string(ctx, lvl+1)));
+          result.push_str(&format!("\n{}", a.to_string(egraph, ctx, lvl+1)));
         }
         result.push(')');
         result
       },
       Injective(n, e1, e2, p) =>
-        format!("(injectivity {n} {} {}\n{})", e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx, lvl+1)),
+        format!("(injectivity {n} {} {}\n{})", e1.to_string(ctx), e2.to_string(ctx), p.to_string(egraph, ctx, lvl+1)),
       Absurd(e1, e2, p) =>
-        format!("(absurd {} {}\n{})",  e1.to_string(ctx), e2.to_string(ctx), p.to_string(ctx, lvl+1)),
+        format!("(absurd {} {}\n{})",  e1.to_string(ctx), e2.to_string(ctx), p.to_string(egraph, ctx, lvl+1)),
       Cases(arms) => {
         let mut result = format!("(cases");
         for (hyp, e1, e2, p) in arms {
@@ -211,7 +212,7 @@ impl Proof {
             ctx.idents.as_str(hyp),
             e1.to_string(ctx),
             e2.to_string(ctx),
-            p.to_string(ctx, lvl+2)));
+            p.to_string(egraph, ctx, lvl+2)));
         }
         result.push(')');
         result
@@ -226,21 +227,26 @@ impl Proof {
       },
       Seq(steps) => {
         let mut result = format!("(seq");
-        for s in steps { result.push_str(&format!("\n{}", s.to_string(ctx, lvl+1))); }
+        for s in steps { result.push_str(&format!("\n{}", s.to_string(egraph, ctx, lvl+1))); }
         result.push(')');
         result
       },
       CaseReduct(hyp, arm, dir) => {
         format!("(case-reduce {}{} {arm})", if *dir { "" } else { "<- " }, ctx.idents.as_str(hyp))
       },
-      CaseSimpl(arm, dir) => {
-        format!("(case-simpl {}{arm})", if *dir { "" } else { "<- " })
+      CaseSimpl(hyp, arm, dir) => {
+        let (lhs, rhs) = egraph.hyp_eq[hyp];
+        format!("(case-simpl {}{arm} ({} {} {}))",
+          if *dir { "" } else { "<- " },
+          ctx.idents.as_str(hyp),
+          egraph.extract(lhs).to_string(ctx),
+          egraph.extract(rhs).to_string(ctx))
       },
       Hyp(ident, dir) => {
         format!("(hyp {}{})", if *dir { "" } else { "<- " }, ctx.idents.as_str(ident))
       },
       CongrScrutinee(p) => {
-        format!("(congr-scrutinee\n{})", p.to_string(ctx, lvl+1))
+        format!("(congr-scrutinee\n{})", p.to_string(egraph, ctx, lvl+1))
       }
     };
     format!("{indent}{result}")
