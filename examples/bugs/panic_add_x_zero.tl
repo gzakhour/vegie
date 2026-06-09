@@ -1,3 +1,5 @@
+; NOT A BUG ANYMORE: NO MORE PANIC
+
 (datatype nat zero (succ nat))
 
 (type add (nat nat) nat)

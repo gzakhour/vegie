@@ -110,6 +110,10 @@ impl VTree {
     }
   }
 
+  pub fn len(&self) -> usize {
+    return self.parent.len()
+  }
+
 }
 
 
@@ -599,25 +603,24 @@ impl ENode {
 
 impl VEGraph {
 
-  pub fn visualise_proof_graph(&self, id: usize, ctx: &Ctx, source: ENodeId) {{{
-    let costs = self.with_costs(ROOT_VERSION);
-    // let costs = self.edge_costs(source);
-    eprintln!("digraph G_{id} {{");
+  pub fn visualise_proof_graph(&self, id: usize, ctx: &Ctx, source: ENodeId, lhs: &ENodeId, rhs: &ENodeId) -> String {{{
+    // let costs = self.with_costs(ROOT_VERSION);
+    let mut result = format!("digraph G_{id} {{ ranksep=1.5; nodesep=1.5; edge [minlen=2];");
     for (eid, edges) in &self.proof_graph {
-      eprintln!("n{} [label=\"n{}: {}\"];",
+      result = format!("{result}\nn{} [label=\"n{}: {}\"{}];",
         eid.0, eid.0, self.extract(*eid).to_string(ctx),
-        // costs.get(eid).unwrap_or(&Default::default()).iter().map(|(v,c)| format!("v={v},cost={},via=({},{})", c.cost, c.prev.0, c.version)).collect::<Vec<_>>().join("; ")
+        if eid == lhs || eid == rhs {
+          ",style=filled,fillcolor=lightblue"
+        } else { "" }
         );
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
-        // if *v != 6 && *v != 5 && *v != 2 && *v != 0 { continue }
-        if *v != ROOT_VERSION { continue }
-        let cost = costs.get(&(*source, step.clone(), *target));
-        eprintln!("n{} -> n{} [label=\"{} @ v{v} [[{cost:?}]]\"];", source.0, target.0, step.to_string(ctx));
+        // let cost = costs.get(&(*source, step.clone(), *target));
+        result = format!("{result}\nn{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
       }
     }
-    eprintln!("}}");
+    format!("{result}}}")
   }}}
 
 }

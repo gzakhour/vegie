@@ -1,3 +1,5 @@
+; NOT A BUG ANYMORE: THE DIRECTIONS IN THE REWRITE ARE CORRECT
+
 (datatype nat zero (succ nat))
 
 (type add (nat nat) nat)

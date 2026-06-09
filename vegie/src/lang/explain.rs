@@ -85,6 +85,7 @@ impl VEGraph {
         .collect::<BTreeSet<_>>();
 
     let mut congr_edges: Vec<_> = vec![];
+    let total_edge_count = edges.len();
 
     for (start, edge, target) in edges {
       match edge {
@@ -97,9 +98,9 @@ impl VEGraph {
       }
     }
 
-    let mut prev_count = 0;
-    while congr_edges.len() != prev_count {
-      prev_count = congr_edges.len();
+    let mut iter_count = 0;
+    while iter_count < 5 {
+      iter_count += 1;
       let mut i = 0;
       while i < congr_edges.len() {
         match &congr_edges[i].1 {
@@ -131,7 +132,7 @@ impl VEGraph {
     }
 
     for e in congr_edges {
-      graph.insert(e, 12378914981);
+      graph.insert(e, total_edge_count+1);
     }
 
     graph
