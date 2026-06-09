@@ -171,12 +171,12 @@ impl VUF {
 pub enum ProofEdge {
   Definition(IdentId, bool),
   Rewrite(TheoremId, bool, BTreeMap<u8, ENodeId>),
-  Congr,
+  Congr(Vec<(ENodeId,ENodeId)>),
   Injective(u8, ENodeId, ENodeId),
   Absurd(ENodeId, ENodeId),
   Hyp(IdentId, bool),
   CaseReduct(IdentId, usize, bool),
-  CaseSimpl(usize, bool),
+  CaseSimpl(IdentId, usize, bool),
 }
 
 impl ProofEdge {
@@ -185,12 +185,12 @@ impl ProofEdge {
     match self {
       Definition(ident, b) => Definition(*ident, !b),
       Rewrite(t, b, es) => Rewrite(*t, !b, es.clone()),
-      Congr => Congr,
+      Congr(args) => Congr(args.clone()),
       Injective(n, a, b) => Injective(*n, *b, *a),
       Absurd(a, b) => Absurd(*b, *a),
       Hyp(h, c) => Hyp(*h, !c),
       CaseReduct(id, n, b) => CaseReduct(*id, *n, !b),
-      CaseSimpl(n, b) => CaseSimpl(*n, !b),
+      CaseSimpl(h, n, b) => CaseSimpl(*h, *n, !b),
     }
   }//}}}
 }
@@ -286,8 +286,11 @@ impl VEGraph {
     }
     let canon = self.canonicalize(enode.clone(), v);
     if canon != enode {
+      let congr_args = if let ENode::App(_, args1) = enode { if let ENode::App(_, args2) = &canon {
+        args1.iter().zip(args2).map(|(a,b)|(*a,*b)).collect()
+      } else { vec![] } } else { vec![] };
       let canon_id = self.add_enode(canon, v);
-      self.union(id, canon_id, v, ProofEdge::Congr);
+      self.union(id, canon_id, v, ProofEdge::Congr(congr_args));
     }
     id
   }//}}}
@@ -349,9 +352,10 @@ impl VEGraph {
       let parent = self.parents[Id::as_usize(&child)][parent];
       if !self.enodes_per_versions[v].contains(&parent) { continue; }
       let parent_enode = self.hashcons.get(&parent).clone();
-      let canonical_parent = self.canonicalize(parent_enode, v);
-      let canonical_parent = self.add_enode(canonical_parent, v);
-      self.union(canonical_parent, parent, v, ProofEdge::Congr);
+      self.add_enode(parent_enode, v); // NOTE add_note recanonicalizes
+      // let canonical_parent = self.canonicalize(parent_enode, v);
+      // let canonical_parent = self.add_enode(canonical_parent, v);
+      // self.union(canonical_parent, parent, v, ProofEdge::Congr(...));
     }
 
     return parent
@@ -596,9 +600,10 @@ impl ENode {
 impl VEGraph {
 
   pub fn visualise_proof_graph(&self, id: usize, ctx: &Ctx, source: ENodeId) {{{
+    let costs = self.with_costs(ROOT_VERSION);
     // let costs = self.edge_costs(source);
     eprintln!("digraph G_{id} {{");
-    for (eid, _) in &self.proof_graph {
+    for (eid, edges) in &self.proof_graph {
       eprintln!("n{} [label=\"n{}: {}\"];",
         eid.0, eid.0, self.extract(*eid).to_string(ctx),
         // costs.get(eid).unwrap_or(&Default::default()).iter().map(|(v,c)| format!("v={v},cost={},via=({},{})", c.cost, c.prev.0, c.version)).collect::<Vec<_>>().join("; ")
@@ -606,8 +611,10 @@ impl VEGraph {
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
-        if *v != 6 && *v != 5 && *v != 2 && *v != 0 { continue }
-        eprintln!("n{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
+        // if *v != 6 && *v != 5 && *v != 2 && *v != 0 { continue }
+        if *v != ROOT_VERSION { continue }
+        let cost = costs.get(&(*source, step.clone(), *target));
+        eprintln!("n{} -> n{} [label=\"{} @ v{v} [[{cost:?}]]\"];", source.0, target.0, step.to_string(ctx));
       }
     }
     eprintln!("}}");

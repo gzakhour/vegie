@@ -2,7 +2,7 @@
 use crate::lang::ast::{Proof};
 use crate::lang::myegraph::{VEGraph, ENode, ProofEdge, ENodeId, Version, ROOT_VERSION};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 
 #[derive(Debug)]
@@ -17,116 +17,166 @@ pub struct ExplainCost {
 impl VEGraph {
 
 
-  pub fn edge_costs(&self, source: ENodeId) -> BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> {{{
-    let mut result: BTreeMap<ENodeId, BTreeMap<Version, ExplainCost>> = BTreeMap::new();
+  fn shortest_path(
+    &self,
+    graph: &BTreeMap<(ENodeId, ProofEdge, ENodeId), usize>,
+    source: ENodeId,
+    target: ENodeId,
+  ) -> Option<(usize, Vec<(ENodeId, ProofEdge, ENodeId)>)>
+  {{{
 
-    result.insert(source, self.vuf.tree.all_versions().map(|v| (v, ExplainCost {
-      cost: 0,
-      prev: source,
-      version: v,
-      proof: ProofEdge::Congr, // anything will do
-    })).collect());
+    #[derive(Eq,PartialEq,Debug)]
+    struct NodeAndCost {
+      node: ENodeId,
+      cost: usize
+    }
 
-    let mut queue = vec![ source ];
-    let mut visited: BTreeSet<ENodeId> = BTreeSet::new();
+    impl Ord for NodeAndCost { fn cmp(&self, other: &Self) -> std::cmp::Ordering { other.cost.cmp(&self.cost) } }
+    impl PartialOrd for NodeAndCost { fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(other.cost.cmp(&self.cost)) } }
+
+    let mut dist: BTreeMap<ENodeId, usize> = BTreeMap::new();
+    let mut queue: BinaryHeap<NodeAndCost> = BinaryHeap::new();
+    let mut prev: BTreeMap<ENodeId, (ProofEdge, ENodeId)> = BTreeMap::new();
+
+    dist.insert(source, 0);
+    queue.push(NodeAndCost { node: source, cost: 0 });
 
     while let Some(node) = queue.pop() {
-      if visited.contains(&node) { continue; }
-      visited.insert(node);
-
-      for (v, proof, next) in self.proof_graph.get(&node).unwrap_or(&Default::default()) {
-
-        result.entry(*next).or_insert_with(|| BTreeMap::new());
-
-        for vc in self.vuf.tree.all_descendents(*v) {
-          let c = self.vuf.tree.all_between(ROOT_VERSION, vc).iter()
-                               .filter_map(|v| result[&node].get(&v))
-                               .map(|c| c.cost)
-                               .min()
-                               .unwrap_or(usize::MAX);
-
-          if c == usize::MAX { continue; }
-          let new_cost = c + match proof {
-            ProofEdge::Congr | ProofEdge::Absurd(_,_) | ProofEdge::Injective(_,_,_) => 100,
-            _ => 1
-          };
-
-          if result[&next].get(&vc).map(|c| c.cost).unwrap_or(usize::MAX) > new_cost {
-            let entry = result.get_mut(&next).unwrap().entry(vc).or_insert(ExplainCost {
-              cost: usize::MAX, prev: node, proof: ProofEdge::Congr, version: *v
-            });
-            entry.cost = new_cost;
-            entry.prev = node;
-            entry.version = *v;
-            entry.proof = proof.clone();
-            visited.remove(next); // TODO is there a better way?
+      let NodeAndCost { node, cost } = node;
+      if node == target {
+        return Some((cost, {
+          let mut path = vec![];
+          let mut node = target;
+          while node != source {
+            let (edge, prev) = &prev[&node];
+            path.push((node, edge.clone(), *prev));
+            node = *prev;
+          }
+          path.reverse();
+          path
+        }))
+      }
+      for (_, e, next) in self.proof_graph.get(&node).unwrap_or(&BTreeSet::new()) {
+        if let Some(edge_cost) = graph.get(&(node, e.clone(), *next)) {
+          let alt_dist = cost + edge_cost;
+          if alt_dist < dist.get(&next).copied().unwrap_or(usize::MAX) {
+            dist.insert(*next, alt_dist);
+            queue.push(NodeAndCost { node: *next, cost: alt_dist });
+            prev.insert(*next, (e.clone(), node));
           }
         }
-
-        queue.push(*next);
       }
     }
 
-    result
+    return None;
   }}}
 
+  pub fn with_costs(&self, v: Version) -> BTreeMap<(ENodeId, ProofEdge, ENodeId), usize> {{{
+    use ProofEdge::*;
 
-  // TODO:
-  //   1. do not make it so recursive
-  //   2. do not recompute the edge costs all the time, especially when `src` does not change (see 1)
+    let mut graph: BTreeMap<(ENodeId, ProofEdge, ENodeId), usize> = BTreeMap::new();
+
+    let mut edges: BTreeSet<(ENodeId, ProofEdge, ENodeId)> = self.proof_graph.iter()
+        .flat_map(|(s,es)| es.iter()
+          .filter(|(ve,_,_)| self.vuf.tree.is_ancestor(*ve,v))
+          .map(move |(v,e,t)| {
+            (*s,e.clone(),*t)
+          }))
+        .collect::<BTreeSet<_>>();
+
+    let mut congr_edges: Vec<_> = vec![];
+
+    for (start, edge, target) in edges {
+      match edge {
+        Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseReduct(_,_,_) | CaseSimpl(_,_,_)  => {
+          graph.insert((start, edge, target), 1);
+        }
+        _ => {
+          congr_edges.push((start, edge, target))
+        }
+      }
+    }
+
+    let mut prev_count = 0;
+    while congr_edges.len() != prev_count {
+      prev_count = congr_edges.len();
+      let mut i = 0;
+      while i < congr_edges.len() {
+        match &congr_edges[i].1 {
+          Congr(args) => {
+            let costs = args.iter().map(|(arg0,arg1)| self.shortest_path(&graph, *arg0, *arg1))
+                .collect::<Option<Vec<_>>>();
+            if let Some(costs) = costs {
+              let cost = costs.into_iter().map(|(x,_)|x).sum::<usize>();
+              graph.insert(congr_edges[i].clone(), cost+1);
+              congr_edges.swap_remove(i);
+            } else {
+              i += 1;
+            }
+          },
+
+          Injective(_, arg0, arg1) | Absurd(arg0, arg1) => {
+            if let Some((cost,_)) = self.shortest_path(&graph, *arg0, *arg1) {
+              graph.insert(congr_edges[i].clone(), cost+1);
+              congr_edges.swap_remove(i);
+            } else {
+              i += 1;
+            }
+          }
+
+          Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseReduct(_,_,_) | CaseSimpl(_,_,_) =>
+            unreachable!()
+        }
+      }
+    }
+
+    for e in congr_edges {
+      graph.insert(e, 12378914981);
+    }
+
+    graph
+  }}}
+
   pub fn explain(&mut self, src: ENodeId, dest: ENodeId, v: Version) -> Proof {{{
 
-    println!("Explain {} = {} at v{v}", src.0, dest.0);
+    if self.query(src, v) == self.query(dest, v) {
 
-    if src == dest { return Proof::Refl }
+      let graph = self.with_costs(v);
 
-    let costs = self.edge_costs(src);
-
-    let c = costs.get(&dest).and_then(|m| m.get(&v)).map(|c| c.cost).unwrap_or(usize::MAX);
-
-    if c < usize::MAX {
-      let ExplainCost { prev: new_dest, proof: step, .. } = &costs[&dest][&v];
-      let step =
+      let mut path = self.shortest_path(&graph, src, dest).unwrap().1.into_iter().map(|(before,step,after)|
         match step {
-          ProofEdge::Definition(def, dir) => Proof::Definition(*def, *dir),
+          ProofEdge::Definition(def, dir) => Proof::Definition(def, dir),
           ProofEdge::Absurd(e0, e1) =>
-            Proof::Absurd(self.extract(*e0), self.extract(*e1), self.explain(*e0, *e1, v).into()),
-          ProofEdge::Hyp(h, dir) => Proof::Hyp(*h, *dir),
+            Proof::Absurd(self.extract(e0), self.extract(e1), self.explain(e0, e1, v).into()),
+          ProofEdge::Hyp(h, dir) => Proof::Hyp(h, dir),
           ProofEdge::Injective(arg, e0, e1) =>
-            Proof::Injective(*arg, self.extract(*e0), self.extract(*e1), self.explain(*e0, *e1, v).into()),
+            Proof::Injective(arg, self.extract(e0), self.extract(e1), self.explain(e0, e1, v).into()),
           ProofEdge::Rewrite(thm, dir, bindings) =>
-            Proof::Rewrite(*thm, *dir, bindings.iter().map(|(v,e)| (*v, self.extract(*e))).collect()),
+            Proof::Rewrite(thm, dir, bindings.iter().map(|(v,e)| (*v, self.extract(*e).clone())).collect()),
           ProofEdge::CaseReduct(e, branch, dir) =>
-            Proof::CaseReduct(*e, *branch, *dir),
-          ProofEdge::CaseSimpl(branch, dir) =>
-            Proof::CaseSimpl(*branch, *dir),
-          ProofEdge::Congr => {
-            match self.hashcons.get(&new_dest).clone() {
+            Proof::CaseReduct(e, branch, dir),
+          ProofEdge::CaseSimpl(hyp, branch, dir) =>
+            Proof::CaseSimpl(hyp, branch, dir),
+          ProofEdge::Congr(_) => {
+            match self.hashcons.get(&before).clone() {
               ENode::App(f1, args1) => {
-                let ENode::App(f2, args2) = self.hashcons.get(&dest).clone() else { panic!() };
+                let ENode::App(f2, args2) = self.hashcons.get(&after).clone() else { panic!() };
                 assert_eq!(f1, f2);
                 assert_eq!(args1.len(), args2.len());
                 Proof::Congr(f1, args1.into_iter().zip(args2).map(|(a1,a2)| self.explain(a1, a2, v)).collect())
               },
               ENode::Case(scrutinee1, _) => {
-                let ENode::Case(scrutinee2, _) = self.hashcons.get(&dest).clone() else { panic!() };
+                let ENode::Case(scrutinee2, _) = self.hashcons.get(&after).clone() else { panic!() };
                 Proof::CongrScrutinee(Box::new(self.explain(scrutinee1, scrutinee2, v)))
               },
               _ => unreachable!()
             }
           }
-        };
+        }).collect::<Vec<_>>();
 
-      let rest = self.explain(src, *new_dest, v);
-
-      match rest {
-        Proof::Seq(mut seq) => {
-          seq.push(step);
-          Proof::Seq(seq)
-        },
-        Proof::Refl => step,
-        rest => Proof::Seq(vec![ rest, step ]),
-      }
+      if path.len() == 0 { Proof::Refl }
+      else if path.len() == 1 { path.pop().unwrap() }
+      else { Proof::Seq(path) }
 
     } else {
       let v_children = self.vuf.tree.children[v].clone();
@@ -141,6 +191,5 @@ impl VEGraph {
     }
 
   }}}
-
 
 }

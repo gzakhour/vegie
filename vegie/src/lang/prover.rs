@@ -81,7 +81,7 @@ impl Prover<'_> {
     if self.is_done() { return; }
     // let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
     for v in 0 .. self.egraph.vuf.tree.parent.len() { // TODO should this be leaves?
-      for _ in 0 .. 2 {
+      for _ in 0 .. 4 {
         // println!("> constructors_non_overlap");
         self.constructors_non_overlap(v);
         // println!("> constructors_injectivite");
@@ -149,7 +149,7 @@ impl Prover<'_> {
   }//}}}
 
   pub fn explain(&mut self) -> String {
-    self.egraph.explain(self.lhs, self.rhs, ROOT_VERSION).to_string(&self.ctx, 0)
+    self.egraph.explain(self.lhs, self.rhs, ROOT_VERSION).to_string(&self.egraph, &self.ctx, 0)
   }
 
 }
@@ -263,8 +263,9 @@ impl Prover<'_> {
           let hyp = self.fresh_hyp();
           let pat = self.egraph.add_expr(&pattern.as_expr(), v);
           self.egraph.union(scrutinee, pat, v, ProofEdge::Hyp(hyp, true));
+          self.egraph.set_hyp_eq(hyp, scrutinee, pat);
           let e = self.egraph.add_expr(&expr, v);
-          self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(arm_i, true));
+          self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(hyp, arm_i, true));
 
           break;
         }
