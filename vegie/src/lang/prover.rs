@@ -81,24 +81,24 @@ impl Prover<'_> {
     if self.is_done() { return; }
     // let leaves = self.leaf_versions.iter().copied().collect::<Vec<_>>();
     for v in 0 .. self.egraph.vuf.tree.parent.len() { // TODO should this be leaves?
-      // println!("> expand_defs");
-      self.expand_defs(v);
-      for _ in 0 .. 2 {
-        // println!("> constructors_non_overlap");
-        self.constructors_non_overlap(v);
-        // println!("> constructors_injectivite");
-        self.constructors_injectivite(v);
-        if self.is_done() { return; }
-        // println!("> apply_theorems");
-        self.apply_theorems(v);
-        if self.is_done() { return; }
-      }
+      //println!("> constructors_non_overlap at {v}");
+      self.constructors_non_overlap(v);
       if self.is_done() { return; }
-      // println!("> case simpl");
+      //println!("> constructors_injectivite at {v}");
+      self.constructors_injectivite(v);
+      if self.is_done() { return; }
+      //println!("> apply_theorems at {v}");
+      self.apply_theorems(v);
+      if self.is_done() { return; }
+      //println!("> expand_defs at {v}");
+      self.expand_defs(v);
+      if self.is_done() { return; }
+      //println!("> case simpl at {v}");
       self.case_simpl(v);
       if self.is_done() { return; }
-      // println!("> case_analysis");
+      //println!("> case_analysis at {v}");
       self.case_analysis(v);
+      if self.is_done() { return; }
     }
   }
 
@@ -231,6 +231,8 @@ impl Prover<'_> {
 
     'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter() {
 
+      if !self.egraph.app_enodes[v].contains_key(&eclass) { continue; }
+
       // skip if eclass has value
       // TODO should probably cache this
       for (f, _) in &self.egraph.app_enodes[v][&eclass] {
@@ -339,12 +341,13 @@ impl Prover<'_> {
   fn apply_theorems(&mut self, v: Version) {//{{{
     for (lemma_id, dir, lhs, rhs) in self.rules.iter().rev() { // search backwards is really better
 
+      // println!("searching for {}", self.ctx.theorems.as_str(lemma_id));
       // println!("v{v} searching for {} while proving {} (lhs={})",
       //   self.ctx.theorems.as_str(lemma_id),
       //   self.ctx.theorems.as_str(&self.theorem),
       //   lhs.to_string(self.ctx));
 
-      let search_results = self.egraph.search_all(lhs, v, 10);
+      let search_results = self.egraph.search_all(lhs, v, 15);
       'search_result: for bindings in search_results {
 
         let enode = self.egraph.add_pattern(lhs, &bindings, v);

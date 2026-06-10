@@ -22,6 +22,7 @@ impl VEGraph {
     graph: &BTreeMap<(ENodeId, ProofEdge, ENodeId), usize>,
     source: ENodeId,
     target: ENodeId,
+    compute_path: bool,
   ) -> Option<(usize, Vec<(ENodeId, ProofEdge, ENodeId)>)>
   {{{
 
@@ -46,13 +47,15 @@ impl VEGraph {
       if node == target {
         return Some((cost, {
           let mut path = vec![];
-          let mut node = target;
-          while node != source {
-            let (edge, prev) = &prev[&node];
-            path.push((node, edge.clone(), *prev));
-            node = *prev;
+          if compute_path {
+            let mut node = target;
+            while node != source {
+              let (edge, prev) = &prev[&node];
+              path.push((node, edge.clone(), *prev));
+              node = *prev;
+            }
+            path.reverse();
           }
-          path.reverse();
           path
         }))
       }
@@ -105,7 +108,7 @@ impl VEGraph {
       while i < congr_edges.len() {
         match &congr_edges[i].1 {
           Congr(args) => {
-            let costs = args.iter().map(|(arg0,arg1)| self.shortest_path(&graph, *arg0, *arg1))
+            let costs = args.iter().map(|(arg0,arg1)| self.shortest_path(&graph, *arg0, *arg1, false))
                 .collect::<Option<Vec<_>>>();
             if let Some(costs) = costs {
               let cost = costs.into_iter().map(|(x,_)|x).sum::<usize>();
@@ -117,7 +120,7 @@ impl VEGraph {
           },
 
           Injective(_, arg0, arg1) | Absurd(arg0, arg1) => {
-            if let Some((cost,_)) = self.shortest_path(&graph, *arg0, *arg1) {
+            if let Some((cost,_)) = self.shortest_path(&graph, *arg0, *arg1, false) {
               graph.insert(congr_edges[i].clone(), cost+1);
               congr_edges.swap_remove(i);
             } else {
@@ -144,7 +147,7 @@ impl VEGraph {
 
       let graph = self.with_costs(v);
 
-      let mut path = self.shortest_path(&graph, src, dest).unwrap().1.into_iter().map(|(before,step,after)|
+      let mut path = self.shortest_path(&graph, src, dest, true).unwrap().1.into_iter().map(|(before,step,after)|
         match step {
           ProofEdge::Definition(def, dir) => Proof::Definition(def, dir),
           ProofEdge::Absurd(e0, e1) =>
