@@ -54,7 +54,7 @@ fn main() {
           prover.proof_iter();
           prover.proof_iter();
           prover.proof_iter();
-          // prover.proof_iter();
+          prover.proof_iter();
           // prover.proof_iter();
           // prover.proof_iter();
           // prover.dump(&format!("/tmp/proof-{theorem_name}.log"));

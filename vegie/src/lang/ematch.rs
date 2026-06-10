@@ -100,7 +100,8 @@ impl VEGraph {
 
         SearchPattern::App(f, args) => {
 
-          egraph.enodes_per_eclass[v][&eclass]
+          egraph.app_enodes[v].get(&eclass).and_then(|m| m.get(f)).unwrap_or(&vec![])
+          // egraph.enodes_per_eclass[v][&eclass]
             .iter()
             .flat_map(|enode| {
               if let ENode::App(enode_f, enode_args) = egraph.hashcons.get(&enode) {
