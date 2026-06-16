@@ -49,6 +49,9 @@ fn main() {
           let name = name.data;
           let theorem_name = parser.ctx.theorems.as_str(&name).to_string();
 
+          print!("Attempting {theorem_name}");
+          use std::io::Write;
+          std::io::stdout().flush().unwrap();
           let mut prover = Prover::from(&mut parser.ctx, name);
           prover.proof_iter();
           prover.proof_iter();
@@ -58,12 +61,14 @@ fn main() {
           // prover.proof_iter();
           // prover.proof_iter();
           // prover.dump(&format!("/tmp/proof-{theorem_name}.log"));
+          print!("\r");
 
           let (code, state) =
             if prover.is_true() { (32, "true") }
             else if prover.is_false() { (31, "false") }
             else { (33, "unknown") };
-          println!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
+          print!("\x1b[{code}mtheorem\x1b[0m:{filename}:{line}: {theorem_name} is {state}");
+          std::io::stdout().flush().unwrap();
 
           // println!("=== DEBUG ===");
           // println!("lhs: {}, rhs: {}", prover.lhs.0, prover.rhs.0);
@@ -74,7 +79,10 @@ fn main() {
                             prover.egraph.visualise_proof_graph(name.0, &prover.ctx, prover.lhs, &prover.lhs, &prover.rhs));
           if code == 32 {
             let _ = fs::write(proofs_dir.join(&theorem_name), prover.explain());
+            print!("... printing proof...");
+            std::io::stdout().flush().unwrap();
             parser.ctx.proven_theorem.insert(name);
+            println!(" done");
           }
         },
 
