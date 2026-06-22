@@ -4,7 +4,3 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# rustc-hash = { version = "2.1.1" }
-# smallvec = { version = "1.8.0", features = ["union", "const_generics"] }
-# indexmap = { version = "2.7.0" }
-# egg = { version = "0.10.0" }
