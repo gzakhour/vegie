@@ -83,7 +83,7 @@ fn main() {
             std::io::stdout().flush().unwrap();
             parser.ctx.proven_theorem.insert(name);
             println!(" done");
-          }
+          } else { println!(""); }
         },
 
         Command::Eval { expr, typ, } => {

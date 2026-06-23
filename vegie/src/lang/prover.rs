@@ -298,7 +298,7 @@ impl Prover<'_> {
         let eid = self.egraph.case_enodes[v][&eclass][i];
         let ENode::Case(scrutinee, arms) = self.egraph.hashcons.get(&eid).clone() else { continue };
         if self.egraph.find(scrutinee, v) != scrutinee { continue; }
-        if self.mark_expanded[v].contains(&eid) { continue 'eclass_search; }
+        if self.mark_expanded[v].contains(&eid) { continue; }
         candidates.push((eid,scrutinee,arms));
       }
 
