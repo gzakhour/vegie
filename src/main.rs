@@ -25,10 +25,10 @@ fn main() {
   buf_reader.read_to_string(&mut contents).unwrap();
   let contents = contents.chars().collect::<Vec<_>>();
 
-  let proofs_dir = Path::new("proofs");
+  let proofs_dir = Path::new("out/proofs");
   let _ = create_dir_all(proofs_dir).unwrap();
 
-  let dot_dir = Path::new("dot");
+  let dot_dir = Path::new("out/dot");
   let _ = create_dir_all(dot_dir).unwrap();
 
   let mut parser = Parser::from(&contents);
