@@ -196,7 +196,7 @@ impl ProofEdge {
     match self {
       Definition(ident, b) => Definition(*ident, !b),
       Rewrite(t, b, es) => Rewrite(*t, !b, es.clone()),
-      Congr(args) => Congr(args.clone()),
+      Congr(args) => Congr(args.iter().map(|(a,b)|(*b,*a)).collect()),
       Injective(n, a, b) => Injective(*n, *b, *a),
       Absurd(a, b) => Absurd(*b, *a),
       Hyp(h, c) => Hyp(*h, !c),
@@ -617,22 +617,24 @@ impl VEGraph {
     // let costs = self.with_costs(ROOT_VERSION);
     let mut result = format!("digraph G_{id} {{ ranksep=1.5; nodesep=1.5; edge [minlen=2]; node [shape=rectangle]; ");
     for (eid, edges) in &self.proof_graph {
-      result = format!("{result}\nn{} [label=\"n{}: {}\"{}];",
+      result.push_str(&format!("\nn{} [label=\"n{}: {}\"{}];",
         eid.0, eid.0, self.extract(*eid).to_string(ctx),
         if eid == lhs || eid == rhs {
           ",style=filled,fillcolor=lightblue"
         } else { "" }
-        );
+        ));
     }
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
         use ProofEdge::*;
         if let Definition(_,false) | Rewrite(_,false,_) | Hyp(_,false) | CaseSimpl(_,false) = step { continue }
-        // let cost = costs.get(&(*source, step.clone(), *target));
-        result = format!("{result}\nn{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
+        if let Injective(_,a,b) | Absurd(a,b) = step { if a > b { continue } }
+        if let Congr(_) = step { if source < target { continue } }
+        result.push_str(&format!("\nn{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx)));
       }
     }
-    format!("{result} }}")
+    result.push_str("}");
+    result
   }}}
 
 }
