@@ -211,8 +211,7 @@ impl crate::lang::myegraph::ProofEdge {
       Rewrite(id, dir, bindings) => format!("{}", op(ctx.theorems.as_str(id).to_string(), dir)),
       Absurd(e1, e2) => format!("n{}=n{}: ※", e1.0, e2.0),
       Hyp(id, dir) => format!("hyp: {}", op(ctx.idents.as_str(id).to_string(), dir)),
-      CaseReduct(id, arm, dir) => format!("case:{} arm={arm}", op(ctx.idents.as_str(id).to_string(), dir)),
-      CaseSimpl(hyp, arm, dir) => format!("case-simpl:{dir:?} hyp={hyp:?} arm={arm}"),
+      CaseSimpl(arm, dir) => format!("case-simpl:{dir:?} arm={arm}"),
       Injective(arg, e1, e2) => format!("n{}=n{}: inj={arg}", e1.0, e2.0),
     }
   }
