@@ -180,8 +180,7 @@ pub enum Proof {
   Injective(u8, Expr, Expr, Box<Proof>),
   Absurd(Expr, Expr, Box<Proof>),
   Cases(Vec<(IdentId, Expr, Expr, Proof)>),
-  CaseReduct(IdentId, usize, bool), // use a hyp
-  CaseSimpl(IdentId, usize, bool), // use the fact that scrutinee is obv a construction
+  CaseSimpl(usize, bool),
   Hyp(IdentId, bool),
   Seq(Vec<Proof>),
 }
@@ -231,16 +230,8 @@ impl Proof {
         result.push(')');
         result
       },
-      CaseReduct(hyp, arm, dir) => {
-        format!("(case-reduce {}{} {arm})", if *dir { "" } else { "<- " }, ctx.idents.as_str(hyp))
-      },
-      CaseSimpl(hyp, arm, dir) => {
-        let (lhs, rhs) = egraph.hyp_eq[hyp];
-        format!("(case-simpl {}{arm} ({} {} {}))",
-          if *dir { "" } else { "<- " },
-          ctx.idents.as_str(hyp),
-          egraph.extract(lhs).to_string(ctx),
-          egraph.extract(rhs).to_string(ctx))
+      CaseSimpl(arm, dir) => {
+        format!("(case-simpl {}{arm})", if *dir { "" } else { "<- " })
       },
       Hyp(ident, dir) => {
         format!("(hyp {}{})", if *dir { "" } else { "<- " }, ctx.idents.as_str(ident))

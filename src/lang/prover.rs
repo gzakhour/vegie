@@ -202,6 +202,7 @@ impl Prover<'_> {
     }
     for (a, b, i, e1, e2) in new_eqs {
       if e1 == e2 { continue; }
+      let (e1,e2) = if e1 < e2 { (e1,e2) } else { (e2,e1) };
       self.egraph.union(a, b, v, ProofEdge::Injective(i as u8, e1, e2));
     }
   }//}}}
@@ -228,6 +229,7 @@ impl Prover<'_> {
   }//}}}
 
   fn case_simpl(&mut self, v: Version) {//{{{
+    if !self.leaf_versions.contains(&v) { return; }
 
     'eclass_search: for eclass in self.egraph.all_eclasses(v).into_iter() {
 
@@ -247,6 +249,7 @@ impl Prover<'_> {
         let eid = self.egraph.case_enodes[v][&eclass][i];
         let ENode::Case(scrutinee, arms) = self.egraph.hashcons.get(&eid).clone() else { continue };
         let ENode::App(constructor, _) = self.egraph.hashcons.get(&scrutinee).clone() else { continue };
+        if self.mark_expanded[v].contains(&eid) { continue; }
         if !self.ctx.type_info[&constructor].constructor { continue; }
 
         candidates.push((eid,arms,constructor,scrutinee));
@@ -254,6 +257,8 @@ impl Prover<'_> {
 
       for (eid, arms, constructor, scrutinee) in candidates {
         for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
+          // TODO this is not enough (it would be buggy when pattern has nested patterns)
+          // but right now none of the examples I have use nested patterns yet
           if let Pattern::App(f, _) = pattern { if f != constructor { continue; } }
 
           // freshen up pattern and expr
@@ -267,7 +272,9 @@ impl Prover<'_> {
           self.egraph.union(scrutinee, pat, v, ProofEdge::Hyp(hyp, true));
           self.egraph.set_hyp_eq(hyp, scrutinee, pat);
           let e = self.egraph.add_expr(&expr, v);
-          self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(hyp, arm_i, true));
+          self.egraph.union(eid, e, v, ProofEdge::CaseSimpl(arm_i, true));
+
+          self.mark_expanded[v].insert(eid);
 
           break;
         }
@@ -303,11 +310,9 @@ impl Prover<'_> {
       }
 
       if let Some((eid, scrutinee, arms)) = candidates.into_iter().min_by_key(|(e,_,_)| *e) {
-        // if eid.0 != 4 && eid.0 != 5 { continue; }
-        // println!("Case analysis on {} at v{}", eid.0, v);
         self.mark_expanded[v].insert(eid);
 
-        for (arm_i, (pattern, expr)) in arms.into_iter().enumerate() {
+        for (arm_i, (pattern, expr)) in arms.clone().into_iter().enumerate() {
           // freshen up pattern and expr
           let vars = pattern.get_vars();
           let subst: BTreeMap<VarId, VarId> = vars.into_iter().map(|v| (v, self.ctx.vars.mk_fresh())).collect();
@@ -319,14 +324,12 @@ impl Prover<'_> {
           // equate scrutinee to pattern
           let pat = self.egraph.add_expr(&pattern.as_expr(), v);
           self.egraph.union(scrutinee, pat, v, ProofEdge::Hyp(hyp, true));
-          // equate eclass to the expr
-          let e = self.egraph.add_expr(&expr, v);
+          // equate eclass to the congr case and to the case body
           self.egraph.set_hyp_eq(hyp, scrutinee, pat);
-          self.egraph.union(eid, e, v, ProofEdge::CaseReduct(hyp, arm_i, true));
-
-          // print!("  v{v}: hyp: {hyp:?}");
-          // println!(": {} = {}", self.egraph.extract(scrutinee).to_string(&self.ctx),
-          //                       self.egraph.extract(pat).to_string(&self.ctx));
+          let new_case = self.egraph.add_expr(&Expr::Case(pattern.as_expr().into(), arms.clone()), v);
+          self.egraph.union(eid, new_case, v, ProofEdge::Congr(vec![ (scrutinee,pat) ]));
+          let e = self.egraph.add_expr(&expr, v);
+          self.egraph.union(new_case, e, v, ProofEdge::CaseSimpl(arm_i, true));
         }
 
         self.remove_version(v);

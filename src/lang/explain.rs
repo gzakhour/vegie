@@ -92,7 +92,7 @@ impl VEGraph {
 
     for (start, edge, target) in edges {
       match edge {
-        Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseReduct(_,_,_) | CaseSimpl(_,_,_)  => {
+        Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseSimpl(_,_)  => {
           graph.insert((start, edge, target), 1);
         }
         _ => {
@@ -128,7 +128,7 @@ impl VEGraph {
             }
           }
 
-          Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseReduct(_,_,_) | CaseSimpl(_,_,_) =>
+          Definition(_,_) | Rewrite(_,_,_) | Hyp(_,_) | CaseSimpl(_,_) =>
             unreachable!()
         }
       }
@@ -157,10 +157,8 @@ impl VEGraph {
             Proof::Injective(arg, self.extract(e0), self.extract(e1), self.explain(e0, e1, v).into()),
           ProofEdge::Rewrite(thm, dir, bindings) =>
             Proof::Rewrite(thm, dir, bindings.iter().map(|(v,e)| (*v, self.extract(*e).clone())).collect()),
-          ProofEdge::CaseReduct(e, branch, dir) =>
-            Proof::CaseReduct(e, branch, dir),
-          ProofEdge::CaseSimpl(hyp, branch, dir) =>
-            Proof::CaseSimpl(hyp, branch, dir),
+          ProofEdge::CaseSimpl(branch, dir) =>
+            Proof::CaseSimpl(branch, dir),
           ProofEdge::Congr(_) => {
             match self.hashcons.get(&before).clone() {
               ENode::App(f1, args1) => {

@@ -63,6 +63,7 @@ pub struct VTree {
 }
 
 impl VTree {
+
   fn new() -> Self {//{{{
     Self { parent: vec![ ROOT_VERSION ], children: vec![ vec![] ] }
   }//}}}
@@ -97,22 +98,22 @@ impl VTree {
     result
   }}}
 
-  pub fn is_ancestor(&self, earlier: Version, later: Version) -> bool {
+  pub fn is_ancestor(&self, earlier: Version, later: Version) -> bool {{{
     if earlier == later { return true; }
     if later == ROOT_VERSION { return false; }
     if earlier == self.parent[later] { return true; }
     self.is_ancestor(earlier, self.parent[later])
-  }
+  }}}
 
-  pub fn dump(&self) {
+  pub fn dump(&self) {{{
     for v in self.all_versions() {
       println!("{v}: {:?}", self.children[v]);
     }
-  }
+  }}}
 
-  pub fn len(&self) -> usize {
+  pub fn len(&self) -> usize {{{
     return self.parent.len()
-  }
+  }}}
 
 }
 
@@ -123,6 +124,7 @@ pub struct VUF {
 }
 
 impl VUF {
+
   fn new() -> Self {//{{{
     Self { parent: vec![ BTreeMap::new() ], tree: VTree::new() }
   }//}}}
@@ -173,14 +175,19 @@ impl VUF {
 
 #[derive(Ord,PartialOrd,Eq,PartialEq,Clone,Debug)]
 pub enum ProofEdge {
-  Definition(IdentId, bool),
   Rewrite(TheoremId, bool, BTreeMap<u8, ENodeId>),
   Congr(Vec<(ENodeId,ENodeId)>),
+
+  // Constructors Datatypes
   Injective(u8, ENodeId, ENodeId),
   Absurd(ENodeId, ENodeId),
+
+  // Case Analysis
   Hyp(IdentId, bool),
-  CaseReduct(IdentId, usize, bool),
-  CaseSimpl(IdentId, usize, bool),
+  CaseSimpl(usize, bool),
+
+  // "Good Software Engineering"
+  Definition(IdentId, bool),
 }
 
 impl ProofEdge {
@@ -193,8 +200,7 @@ impl ProofEdge {
       Injective(n, a, b) => Injective(*n, *b, *a),
       Absurd(a, b) => Absurd(*b, *a),
       Hyp(h, c) => Hyp(*h, !c),
-      CaseReduct(id, n, b) => CaseReduct(*id, *n, !b),
-      CaseSimpl(h, n, b) => CaseSimpl(*h, *n, !b),
+      CaseSimpl(n, b) => CaseSimpl(*n, !b),
     }
   }//}}}
 }
@@ -249,7 +255,7 @@ impl VEGraph {
     }
   }//}}}
 
-  fn add_enode(&mut self, enode: ENode, v: Version) -> ENodeId {//{{{
+  pub fn add_enode(&mut self, enode: ENode, v: Version) -> ENodeId {//{{{
     for vc in self.vuf.tree.children[v].clone() {
       self.add_enode(enode.clone(), vc);
     }
@@ -290,9 +296,13 @@ impl VEGraph {
     }
     let canon = self.canonicalize(enode.clone(), v);
     if canon != enode {
-      let congr_args = if let ENode::App(_, args1) = enode { if let ENode::App(_, args2) = &canon {
-        args1.iter().zip(args2).map(|(a,b)|(*a,*b)).collect()
-      } else { vec![] } } else { vec![] };
+      let congr_args = match (enode, &canon) {
+        (ENode::App(_,args1), ENode::App(_,args2)) =>
+          args1.iter().zip(args2).map(|(a,b)|(*a,*b)).collect(),
+        (ENode::Case(e1,_), ENode::Case(e2,_)) =>
+          vec![ (e1,*e2) ],
+        _ => vec![]
+      };
       let canon_id = self.add_enode(canon, v);
       self.union(id, canon_id, v, ProofEdge::Congr(congr_args));
     }
@@ -617,12 +627,12 @@ impl VEGraph {
     for (source, edges) in &self.proof_graph {
       for (v, step, target) in edges {
         use ProofEdge::*;
-        if let Definition(_,false) | Rewrite(_,false,_) | Hyp(_,false) | CaseReduct(_,_,false) | CaseSimpl(_,_,false) = step { continue }
+        if let Definition(_,false) | Rewrite(_,false,_) | Hyp(_,false) | CaseSimpl(_,false) = step { continue }
         // let cost = costs.get(&(*source, step.clone(), *target));
         result = format!("{result}\nn{} -> n{} [label=\"{} @ v{v}\"];", source.0, target.0, step.to_string(ctx));
       }
     }
-    format!("{result}}}")
+    format!("{result} }}")
   }}}
 
 }
