@@ -207,7 +207,7 @@ impl Proof {
       Cases(arms) => {
         let mut result = format!("(cases");
         for (hyp, e1, e2, p) in arms {
-          result.push_str(&format!("\n{indent}  (let ({} {} {})\n{})",
+          result.push_str(&format!("\n{indent}  (with ({} {} {})\n{})",
             ctx.idents.as_str(hyp),
             e1.to_string(ctx),
             e2.to_string(ctx),
