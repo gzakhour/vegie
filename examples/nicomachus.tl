@@ -1,79 +1,15 @@
 (datatype nat zero (succ nat))
 (datatype bool true false)
 
-(type not (bool) bool)
-(def not (?b) (case ?b (true false) (false true)))
-
-(theorem not_true () (not true) false)
-(theorem not_false () (not false) true)
-(theorem not_not ((?b bool)) (not (not ?b)) ?b)
-
-(type even (nat) bool)
-(type odd (nat) bool)
-
-(def even (?x) (case ?x (zero true) ((succ ?y) (not (odd ?y)))))
-(def odd (?x) (case ?x (zero false) ((succ ?y) (not (even ?y)))))
-
-(theorem even_zero () (even zero) true)
-(theorem even_succ ((?x nat)) (even (succ ?x)) (not (odd ?x)))
-
-(theorem odd_zero () (odd zero) false)
-(theorem odd_succ ((?x nat)) (odd (succ ?x)) (not (even ?x)))
-
-(theorem even_plus_2 ((?x nat))
-  (even (succ (succ ?x)))
-  (even ?x))
-
-; (theorem even_succ_odd ((?x nat))
-;   (even (succ ?x))
-;   (not (even ?x)))
-
 
 (type one () nat)
 (def one () (succ zero))
-
-(type const (nat nat) nat)
-(def const (?x ?y) ?x)
-
-(theorem const_ignores_second ((?x nat) (?y nat))
-  (const ?x ?y)
-  ?x)
 
 (eval one)
 
 (theorem one_is_succ_zero ()
   (succ zero)
   one)
-
-(theorem with_case1 ((?n nat))
-  (case ?n
-    (zero zero)
-    ((succ ?x) zero))
-  zero)
-
-(theorem with_case2 ((?n nat))
-  (case ?n
-    (zero zero)
-    ((succ ?x) (succ ?x)))
-  ?n)
-
-(theorem with_case3_false ((?n nat))
-  (case ?n
-    (zero zero)
-    ((succ ?x) (succ ?x)))
-  (succ ?n))
-
-(type sign (nat) nat)
-(def sign (?n) (case ?n (zero zero) ((succ ?x) (succ zero))))
-
-(theorem sign_succ_one ((?x nat))
-  (sign (succ ?x)) one)
-
-(theorem def_with_case ((?n nat))
-  (case ?n
-    (zero one)
-    ((succ ?a) (sign ?n)))
-  (succ zero))
 
 
 (type add (nat nat) nat)
@@ -92,18 +28,15 @@
 
 (theorem add_succ ((?x nat) (?y nat))
   (succ (add ?x ?y))
-  (add (succ ?x) ?y)
-)
+  (add (succ ?x) ?y))
 
 (theorem add_succ_left ((?x nat) (?y nat))
   (succ (add ?x ?y))
-  (add (succ ?x) ?y)
-)
+  (add (succ ?x) ?y))
 
 (theorem add_succ_right ((?x nat) (?y nat))
   (succ (add ?x ?y))
-  (add ?x (succ ?y))
-)
+  (add ?x (succ ?y)))
 
 (theorem add_comm ((?x nat) (?y nat))
   (add ?x ?y)
@@ -135,36 +68,6 @@
 
 
 
-(type traverse (nat) nat)
-(def traverse (?x)
-  (case ?x
-    (zero zero)
-    ((succ ?x) (traverse ?x))))
-
-(theorem traverse_is_zero ((?x nat))
-  (traverse ?x) zero)
-
-
-(type expensive_id (nat) nat)
-(def expensive_id (?x)
-  (case ?x
-    (zero zero)
-    ((succ ?a) (succ (expensive_id ?a)))))
-
-(theorem expensive_id_is_just_id ((?x nat))
-  (expensive_id ?x) ?x)
-
-(type stupid_id (nat) nat)
-(def stupid_id (?x)
-  (add (traverse ?x) ?x))
-
-(theorem stupid_id_is_id ((?x nat))
-  (stupid_id ?x) ?x)
-
-
-
-(datatype 2nat (pair nat nat))
-
 (type mult (nat nat) nat)
 (def mult (?x ?y)
   (case ?x
@@ -178,11 +81,9 @@
 (theorem mult_zero_right ((?x nat))
   (mult ?x zero) zero)
 
-; order matters
 (theorem mult_def_succ ((?x nat) (?y nat))
   (add ?y (mult ?x ?y))
-  (mult (succ ?x) ?y)
-)
+  (mult (succ ?x) ?y))
 
 (theorem mult_one_unit_left ((?x nat))
   (mult one ?x)
@@ -194,13 +95,11 @@
 
 (theorem mult_succ_def ((?x nat) (?y nat))
   (mult (succ ?x) ?y)
-  (add ?y (mult ?x ?y))
-)
+  (add ?y (mult ?x ?y)))
 
 (theorem mult_comm ((?x nat) (?y nat))
   (mult ?x ?y)
-  (mult ?y ?x)
-)
+  (mult ?y ?x))
 
 (theorem mult_add_dist ((?x nat) (?y nat) (?z nat))
   (mult ?x (add ?y ?z))
